@@ -418,7 +418,7 @@ export function PullRequestDetailPanel({
     readonly pullRequestKey: string;
     readonly environmentId: EnvironmentId;
     readonly cwd: string;
-    readonly pullRequestUpdatedAt: string;
+    readonly revision: string;
   } | null>(null);
   const selectCodeCommit = (oid: string | null) => {
     setCodeCommitScope({ pullRequestKey, oid });
@@ -512,7 +512,7 @@ export function PullRequestDetailPanel({
   );
   const reviewWorkspace =
     reviewWorkspaceScope?.pullRequestKey === pullRequestKey &&
-    reviewWorkspaceScope.pullRequestUpdatedAt === detail?.updatedAt
+    reviewWorkspaceScope.revision === detail?.updatedAt
       ? reviewWorkspaceScope
       : null;
   const repositoryUrl = detail === null ? null : changeRequestRepositoryUrl(detail.url);
@@ -989,7 +989,7 @@ export function PullRequestDetailPanel({
         pullRequestKey,
         environmentId,
         cwd: detail.workspaceRoot,
-        pullRequestUpdatedAt: detail.updatedAt,
+        revision: detail.updatedAt,
       });
       setTab("code");
       return;
@@ -1029,7 +1029,7 @@ export function PullRequestDetailPanel({
       pullRequestKey,
       environmentId: actingEnvironmentId,
       cwd: prepared.value.worktreePath ?? acting?.workspaceRoot ?? detail.workspaceRoot,
-      pullRequestUpdatedAt: detail.updatedAt,
+      revision: detail.updatedAt,
     });
     setTab("code");
     toastManager.update(toastId, {

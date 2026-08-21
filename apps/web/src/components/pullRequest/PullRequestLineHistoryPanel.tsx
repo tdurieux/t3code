@@ -366,12 +366,14 @@ export function PullRequestLineHistoryContent({
 export function PullRequestLineHistoryPanel({
   environmentId,
   cwd,
+  revision,
   path,
   line,
   onClose,
 }: {
   readonly environmentId: EnvironmentId;
   readonly cwd: string;
+  readonly revision: string;
   readonly path: string;
   readonly line: number;
   readonly onClose: () => void;
@@ -379,7 +381,7 @@ export function PullRequestLineHistoryPanel({
   const query = useEnvironmentQuery(
     reviewEnvironment.lineHistory({
       environmentId,
-      input: { cwd, path, line },
+      input: { cwd, path, line, revision },
     }),
   );
 

@@ -56,6 +56,8 @@ export const ReviewLineHistoryInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   path: TrimmedNonEmptyString,
   line: PositiveInt,
+  /** Host revision token used to keep immutable line-history cache entries distinct. */
+  revision: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type ReviewLineHistoryInput = typeof ReviewLineHistoryInput.Type;
 

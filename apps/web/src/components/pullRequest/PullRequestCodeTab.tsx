@@ -151,6 +151,7 @@ export interface PullRequestAgentSelectionInput {
 export interface PullRequestReviewWorkspace {
   readonly environmentId: EnvironmentId;
   readonly cwd: string;
+  readonly revision: string;
 }
 
 /** The contract's sides named the way the diff viewer names them, and back again. */
@@ -1403,6 +1404,7 @@ export function PullRequestCodeTab({
           <PullRequestLineHistoryPanel
             environmentId={reviewWorkspace.environmentId}
             cwd={reviewWorkspace.cwd}
+            revision={reviewWorkspace.revision}
             path={historyTarget.path}
             line={historyTarget.line}
             onClose={() => setHistoryTarget(null)}
