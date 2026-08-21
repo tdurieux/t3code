@@ -97,9 +97,9 @@ export function PullRequestReviewChecksPanel({
               This pull request has no reported checks.
             </p>
           ) : (
-            checks.map((check, index) => (
+            checks.map((check) => (
               <button
-                key={`${index}:${check.name}:${check.url ?? ""}`}
+                key={`${check.name}:${check.url ?? ""}:${check.description ?? ""}`}
                 type="button"
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-accent/60 disabled:cursor-default"
                 disabled={!check.url}
