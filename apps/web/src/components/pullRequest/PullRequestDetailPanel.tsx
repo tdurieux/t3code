@@ -414,6 +414,12 @@ export function PullRequestDetailPanel({
   }>(() => ({ pullRequestKey, oid: null }));
   const selectedCodeCommitOid =
     codeCommitScope.pullRequestKey === pullRequestKey ? codeCommitScope.oid : null;
+  const [reviewWorkspaceScope, setReviewWorkspaceScope] = useState<{
+    readonly pullRequestKey: string;
+    readonly environmentId: EnvironmentId;
+    readonly cwd: string;
+    readonly pullRequestUpdatedAt: string;
+  } | null>(null);
   const selectCodeCommit = (oid: string | null) => {
     setCodeCommitScope({ pullRequestKey, oid });
   };
@@ -504,6 +510,11 @@ export function PullRequestDetailPanel({
           },
     [activity, coreDetail],
   );
+  const reviewWorkspace =
+    reviewWorkspaceScope?.pullRequestKey === pullRequestKey &&
+    reviewWorkspaceScope.pullRequestUpdatedAt === detail?.updatedAt
+      ? reviewWorkspaceScope
+      : null;
   const repositoryUrl = detail === null ? null : changeRequestRepositoryUrl(detail.url);
   const branchRefsQuery = useEnvironmentQuery(
     detail === null
@@ -966,6 +977,68 @@ export function PullRequestDetailPanel({
     );
   };
 
+  const toggleReviewWorkspace = async () => {
+    if (!detail || handoff !== null) return;
+    if (reviewWorkspace !== null) {
+      setReviewWorkspaceScope(null);
+      return;
+    }
+
+    if (context === "thread") {
+      setReviewWorkspaceScope({
+        pullRequestKey,
+        environmentId,
+        cwd: detail.workspaceRoot,
+        pullRequestUpdatedAt: detail.updatedAt,
+      });
+      setTab("code");
+      return;
+    }
+
+    setHandoff("review");
+    const toastId = toastManager.add({
+      type: "loading",
+      title: "Preparing the review checkout...",
+    });
+    const prepared = await prepareThread.run({
+      reference: detail.url,
+      mode: "worktree",
+    });
+    setHandoff(null);
+    if (prepared._tag === "Failure") {
+      const detailMessage =
+        prepareThread.error instanceof Error ? prepareThread.error.message : null;
+      toastManager.update(toastId, {
+        type: "error",
+        title: "Could not prepare the review checkout",
+        ...(detailMessage ? { description: detailMessage } : {}),
+      });
+      return;
+    }
+    if (!prepared.value.isOnPullRequestHead) {
+      toastManager.update(toastId, {
+        type: "warning",
+        title: "Review checkout is not on the latest commits",
+        description:
+          "Local changes or commits kept the existing worktree behind the pull request. Line history stays off so it cannot describe the wrong code.",
+      });
+      return;
+    }
+
+    setReviewWorkspaceScope({
+      pullRequestKey,
+      environmentId: actingEnvironmentId,
+      cwd: prepared.value.worktreePath ?? acting?.workspaceRoot ?? detail.workspaceRoot,
+      pullRequestUpdatedAt: detail.updatedAt,
+    });
+    setTab("code");
+    toastManager.update(toastId, {
+      type: "success",
+      title: "Review checkout ready",
+      description: "Select an unchanged or added line to inspect its history and ownership.",
+    });
+  };
+
   const startCheckout = (mode: "worktree" | "local") => {
     if (!detail) return;
     void startHandoff(`checkout:${mode}`, null, mode);
@@ -1218,6 +1291,16 @@ export function PullRequestDetailPanel({
         <div className="mr-4 flex h-7 min-w-0 flex-nowrap items-center justify-end gap-1">
           {detail ? (
             <>
+              <Button
+                size="xs"
+                variant={reviewWorkspace ? "secondary" : "outline"}
+                aria-pressed={reviewWorkspace !== null}
+                disabled={handoff !== null}
+                onClick={() => void toggleReviewWorkspace()}
+              >
+                <PanelRightIcon aria-hidden className="size-3.5" />
+                {handoff === "review" ? "Preparing..." : reviewWorkspace ? "End review" : "Review"}
+              </Button>
               {/* Checking a pull request out is the reason to open one here at all, so it is a
                   button of its own rather than a side effect of asking an agent for something.
                   It asks where, because the two answers are not interchangeable: one leaves your
@@ -1954,6 +2037,7 @@ export function PullRequestDetailPanel({
                     environmentId={environmentId}
                     reference={reference}
                     detail={detail}
+                    {...(reviewWorkspace ? { reviewWorkspace } : {})}
                     selectedCommitOid={selectedCodeCommitOid}
                     onSelectedCommitChange={selectCodeCommit}
                     pendingFinding={handoff}
