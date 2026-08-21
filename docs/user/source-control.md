@@ -45,6 +45,22 @@ T3 Code works with the platforms your team already uses:
 - Command-click (Control-click on Windows and Linux) a pull request number in the sidebar to open it in your browser instead of in T3 Code
 - Check out a teammate's branch to review code locally
 
+**Inspect why a line exists**
+
+- Open a pull request and choose **Review** to prepare an isolated checkout without leaving the
+  pull request
+- In the **Code** tab, select an unchanged or added line to open its Git history beside the diff
+- See who introduced the line, the commit date and message, a link to the introducing change and
+  pull request, earlier code versions, nearby ownership, suggested reviewers, and history-based
+  risk signals
+- Ownership combines separated ranges from the same person into one entry, while the colored bar
+  keeps the boundaries visible
+- Choose **End review** to return to the normal Code view. The checkout stays available so local
+  work is never removed implicitly.
+
+Line history follows the current file in the pull request checkout. Deleted lines do not exist in
+that checkout, so select an unchanged or added line instead.
+
 **Fix what you wrote, in place**
 
 - Rewrite a pull request's title and description from the review itself, in Markdown, with a
