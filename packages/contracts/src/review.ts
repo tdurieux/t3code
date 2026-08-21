@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { GitCommandError } from "./git.ts";
 import { VcsError } from "./vcs.ts";
 
@@ -51,3 +51,110 @@ export type ReviewDiffPreviewResult = typeof ReviewDiffPreviewResult.Type;
 
 export const ReviewDiffPreviewError = Schema.Union([VcsError, GitCommandError]);
 export type ReviewDiffPreviewError = typeof ReviewDiffPreviewError.Type;
+
+export const ReviewLineHistoryInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  path: TrimmedNonEmptyString,
+  line: PositiveInt,
+});
+export type ReviewLineHistoryInput = typeof ReviewLineHistoryInput.Type;
+
+export const ReviewLineHistoryAuthor = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  email: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type ReviewLineHistoryAuthor = typeof ReviewLineHistoryAuthor.Type;
+
+export const ReviewLineHistoryPullRequest = Schema.Struct({
+  number: PositiveInt,
+  url: TrimmedNonEmptyString,
+});
+export type ReviewLineHistoryPullRequest = typeof ReviewLineHistoryPullRequest.Type;
+
+export const ReviewLineHistoryCommit = Schema.Struct({
+  sha: TrimmedNonEmptyString,
+  shortSha: TrimmedNonEmptyString,
+  author: ReviewLineHistoryAuthor,
+  authoredAt: Schema.DateTimeUtc,
+  summary: TrimmedNonEmptyString,
+  message: Schema.String,
+  url: Schema.NullOr(TrimmedNonEmptyString),
+  pullRequest: Schema.NullOr(ReviewLineHistoryPullRequest),
+});
+export type ReviewLineHistoryCommit = typeof ReviewLineHistoryCommit.Type;
+
+export const ReviewLineHistoryVersion = Schema.Struct({
+  commit: ReviewLineHistoryCommit,
+  line: PositiveInt,
+  excerptStartLine: PositiveInt,
+  excerpt: Schema.Array(Schema.String),
+});
+export type ReviewLineHistoryVersion = typeof ReviewLineHistoryVersion.Type;
+
+export const ReviewLineOwnershipSegment = Schema.Struct({
+  startLine: PositiveInt,
+  endLine: PositiveInt,
+  author: ReviewLineHistoryAuthor,
+  commitSha: Schema.NullOr(TrimmedNonEmptyString),
+  authoredAt: Schema.NullOr(Schema.DateTimeUtc),
+});
+export type ReviewLineOwnershipSegment = typeof ReviewLineOwnershipSegment.Type;
+
+export const ReviewLineReviewerSuggestion = Schema.Struct({
+  author: ReviewLineHistoryAuthor,
+  score: NonNegativeInt,
+  nearbyLines: NonNegativeInt,
+  historicalTouches: NonNegativeInt,
+  reason: TrimmedNonEmptyString,
+});
+export type ReviewLineReviewerSuggestion = typeof ReviewLineReviewerSuggestion.Type;
+
+export const ReviewLineRiskStability = Schema.Literals([
+  "recent",
+  "active",
+  "stable",
+  "long-untouched",
+  "reverted",
+]);
+export type ReviewLineRiskStability = typeof ReviewLineRiskStability.Type;
+
+export const ReviewLineRisk = Schema.Struct({
+  stability: ReviewLineRiskStability,
+  ageDays: NonNegativeInt,
+  touchCount: NonNegativeInt,
+  revertCount: NonNegativeInt,
+  signals: Schema.Array(TrimmedNonEmptyString),
+});
+export type ReviewLineRisk = typeof ReviewLineRisk.Type;
+
+export const ReviewLineHistoryResult = Schema.Struct({
+  path: TrimmedNonEmptyString,
+  line: PositiveInt,
+  headSha: TrimmedNonEmptyString,
+  generatedAt: Schema.DateTimeUtc,
+  introducedBy: Schema.NullOr(ReviewLineHistoryCommit),
+  originalLine: Schema.NullOr(PositiveInt),
+  isUncommitted: Schema.Boolean,
+  versions: Schema.Array(ReviewLineHistoryVersion),
+  ownership: Schema.Array(ReviewLineOwnershipSegment),
+  reviewerSuggestions: Schema.Array(ReviewLineReviewerSuggestion),
+  risk: ReviewLineRisk,
+  truncated: Schema.Boolean,
+});
+export type ReviewLineHistoryResult = typeof ReviewLineHistoryResult.Type;
+
+export class ReviewLineHistoryError extends Schema.TaggedErrorClass<ReviewLineHistoryError>()(
+  "ReviewLineHistoryError",
+  {
+    operation: Schema.String,
+    cwd: Schema.String,
+    path: Schema.String,
+    line: PositiveInt,
+    stage: Schema.Literals(["validate", "blame", "history"]),
+    detail: Schema.String,
+  },
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}
