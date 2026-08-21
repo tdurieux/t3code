@@ -250,6 +250,7 @@ export function PullRequestCodeTab({
   } | null>(null);
   const [reviewQuickOpen, setReviewQuickOpen] = useState(false);
   const [reviewChecksOpen, setReviewChecksOpen] = useState(false);
+  const [reviewCommentsVisible, setReviewCommentsVisible] = useState(true);
   const [reviewViewMode, setReviewViewMode] = useState<"diff" | "file">("diff");
   const [selectedReviewPath, setSelectedReviewPath] = useState<string | null>(null);
   const [reviewReveal, setReviewReveal] = useState<{
@@ -291,6 +292,7 @@ export function PullRequestCodeTab({
     setReviewViewMode("diff");
     setReviewReveal(null);
     setReviewChecksOpen(false);
+    setReviewCommentsVisible(true);
     parseCache.current.clear();
   }, [reviewWorkspace?.cwd, scopeKey]);
 
@@ -464,6 +466,20 @@ export function PullRequestCodeTab({
     if (first) setSelectedReviewPath(first.path);
   }, [reviewFiles, reviewWorkspace, selectedReviewPath]);
   const nextCursor = loadedSlices.at(-1)?.nextCursor ?? null;
+  // Review mode needs a complete file index even while the reader is in full-file mode, where
+  // the diff footer is not mounted and cannot trigger the normal intersection observer.
+  useEffect(() => {
+    if (
+      reviewWorkspace === undefined ||
+      nextCursor === null ||
+      nextCursor === cursor ||
+      diffQuery.isPending ||
+      diffQuery.error !== null
+    ) {
+      return;
+    }
+    setSliceState((previous) => ({ ...previous, cursor: nextCursor }));
+  }, [cursor, diffQuery.error, diffQuery.isPending, nextCursor, reviewWorkspace]);
   // What a slice withheld: the host declining to inline part of it, or a patch the viewer could
   // not structure and so dropped. Neither says anything about there being more to fetch.
   const withheldContent =
@@ -518,7 +534,7 @@ export function PullRequestCodeTab({
           return created;
         };
 
-        for (const thread of detail.reviewThreads) {
+        for (const thread of reviewCommentsVisible ? detail.reviewThreads : []) {
           if (thread.path !== path || thread.line === null) continue;
           if (!placedThreadIds.has(thread.id)) continue;
           groupAt(thread.side, thread.line).threads.push(thread);
@@ -526,7 +542,7 @@ export function PullRequestCodeTab({
         // Pending comments anchor to the head diff exactly like host threads do, so a
         // commit's diff must not place them either — the same line means other code there.
         if (commit === null) {
-          for (const comment of pendingComments) {
+          for (const comment of reviewCommentsVisible ? pendingComments : []) {
             if (comment.path !== path) continue;
             const anchor = getReviewPositionAnchor(comment.position);
             groupAt(anchor.side, anchor.line).pending.push(comment);
@@ -590,6 +606,7 @@ export function PullRequestCodeTab({
       foldOverride,
       pendingComments,
       placedThreadIds,
+      reviewCommentsVisible,
       toggledFiles,
     ],
   );
@@ -1251,6 +1268,30 @@ export function PullRequestCodeTab({
               </TooltipTrigger>
               <TooltipPopup side="top">Checks and workflow logs</TooltipPopup>
             </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Toggle
+                    aria-label={
+                      reviewCommentsVisible ? "Collapse review comments" : "Show review comments"
+                    }
+                    variant="ghost"
+                    size="sm"
+                    pressed={reviewCommentsVisible}
+                    onPressedChange={(pressed) => setReviewCommentsVisible(Boolean(pressed))}
+                  />
+                }
+              >
+                {reviewCommentsVisible ? (
+                  <MessageSquareIcon className="size-3.5" />
+                ) : (
+                  <MessageSquareOffIcon className="size-3.5" />
+                )}
+              </TooltipTrigger>
+              <TooltipPopup side="top">
+                {reviewCommentsVisible ? "Collapse review comments" : "Show review comments"}
+              </TooltipPopup>
+            </Tooltip>
             <ToggleGroup
               className="shrink-0 gap-1"
               size="sm"
@@ -1443,7 +1484,7 @@ export function PullRequestCodeTab({
           {toolbar}
           {/* Above the code, closed, and counted: these belong to the change rather than to any
             line of it, and in the stream they read as cards dropped into the patch. */}
-          {orphanFiles.size > 0 ? (
+          {reviewCommentsVisible && orphanFiles.size > 0 ? (
             <Collapsible
               className="shrink-0 border-b border-border/60"
               open={orphansOpen}
