@@ -1,0 +1,403 @@
+import type { EnvironmentId, ProjectContentMatch } from "@t3tools/contracts";
+import { BracesIcon, FileCode2Icon, SearchIcon, TextSearchIcon } from "lucide-react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { useProjectContentSearch, useProjectPathSearch } from "~/state/queries";
+import { cn } from "~/lib/utils";
+
+import { useProjectFileQuery } from "../files/projectFilesQueryState";
+import {
+  Command,
+  CommandCollection,
+  CommandDialog,
+  CommandDialogPopup,
+  CommandEmpty,
+  CommandFooter,
+  CommandGroup,
+  CommandGroupLabel,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandPanel,
+} from "../ui/command";
+import { Input } from "../ui/input";
+import { Kbd } from "../ui/kbd";
+import { toastManager } from "../ui/toast";
+import {
+  parsePullRequestReviewQuickOpenQuery,
+  pullRequestReviewDeclarationQuery,
+  selectPullRequestReviewDeclarations,
+  selectPullRequestReviewFiles,
+} from "./pullRequestReviewQuickOpen.logic";
+
+export interface PullRequestReviewFileEntry {
+  readonly path: string;
+  readonly additions: number;
+  readonly deletions: number;
+}
+
+function pathParts(path: string) {
+  const slash = path.lastIndexOf("/");
+  return slash < 0
+    ? { name: path, parent: "" }
+    : { name: path.slice(slash + 1), parent: path.slice(0, slash) };
+}
+
+function useCopyReviewPath() {
+  return useCopyToClipboard<string>({
+    target: "relative file path",
+    onCopy: (path) =>
+      toastManager.add({ type: "success", title: "Relative path copied", description: path }),
+    onError: () => toastManager.add({ type: "error", title: "Could not copy the file path" }),
+  }).copyToClipboard;
+}
+
+export function PullRequestReviewFileSidebar({
+  files,
+  selectedPath,
+  onSelect,
+  onOpenQuickOpen,
+}: {
+  readonly files: ReadonlyArray<PullRequestReviewFileEntry>;
+  readonly selectedPath: string | null;
+  readonly onSelect: (path: string) => void;
+  readonly onOpenQuickOpen: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const copyPath = useCopyReviewPath();
+  const visible = useMemo(() => {
+    const words = query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    return words.length === 0
+      ? files
+      : files.filter((file) => words.every((word) => file.path.toLocaleLowerCase().includes(word)));
+  }, [files, query]);
+
+  useEffect(() => setActiveIndex(0), [query]);
+
+  const onFilterKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveIndex((current) => {
+        const offset = event.key === "ArrowDown" ? 1 : -1;
+        return visible.length === 0 ? 0 : (current + offset + visible.length) % visible.length;
+      });
+    } else if (event.key === "Enter") {
+      const file = visible[activeIndex];
+      if (file) onSelect(file.path);
+    }
+  };
+
+  return (
+    <aside className="hidden w-64 shrink-0 flex-col border-r border-border/60 bg-muted/10 md:flex">
+      <div className="border-b border-border/60 p-2">
+        <div className="relative">
+          <SearchIcon className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="h-7 pl-7 pr-12 text-xs"
+            aria-label="Filter changed files"
+            placeholder="Filter files"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={onFilterKeyDown}
+          />
+          <button
+            type="button"
+            className="absolute right-1 top-1/2 -translate-y-1/2 rounded px-1 py-0.5 text-[9px] text-muted-foreground hover:bg-accent hover:text-foreground"
+            onClick={onOpenQuickOpen}
+          >
+            <Kbd>⌘K</Kbd>
+          </button>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto py-1" role="listbox" aria-label="Changed files">
+        {visible.map((file, index) => {
+          const label = pathParts(file.path);
+          const selected = file.path === selectedPath;
+          return (
+            <button
+              key={file.path}
+              type="button"
+              role="option"
+              aria-selected={selected}
+              className={cn(
+                "flex w-full items-start gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent/60",
+                selected && "bg-accent text-accent-foreground",
+                !selected && index === activeIndex && "bg-accent/35",
+              )}
+              onMouseMove={() => setActiveIndex(index)}
+              onClick={() => onSelect(file.path)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                copyPath(file.path, file.path);
+              }}
+            >
+              <FileCode2Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{label.name}</span>
+                {label.parent ? (
+                  <span className="block truncate text-[10px] text-muted-foreground">
+                    {label.parent}
+                  </span>
+                ) : null}
+              </span>
+              <span className="shrink-0 font-mono text-[9px] tabular-nums">
+                <span className="text-emerald-600 dark:text-emerald-400">+{file.additions}</span>{" "}
+                <span className="text-rose-600 dark:text-rose-400">-{file.deletions}</span>
+              </span>
+            </button>
+          );
+        })}
+        {visible.length === 0 ? (
+          <p className="px-3 py-6 text-center text-xs text-muted-foreground">No matching files.</p>
+        ) : null}
+      </div>
+    </aside>
+  );
+}
+
+const PLACEHOLDERS = {
+  files: "Search files and symbols…",
+  currentSymbols: "Search symbols in the current file…",
+  workspaceSymbols: "Search workspace symbols…",
+  line: "Go to line:column…",
+  text: "Search text across the workspace…",
+} as const;
+
+export function PullRequestReviewQuickOpen({
+  open,
+  environmentId,
+  cwd,
+  changedPaths,
+  selectedPath,
+  onOpenChange,
+  onSelect,
+}: {
+  readonly open: boolean;
+  readonly environmentId: EnvironmentId;
+  readonly cwd: string;
+  readonly changedPaths: ReadonlyArray<string>;
+  readonly selectedPath: string | null;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onSelect: (path: string, line?: number, column?: number) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const copyPath = useCopyReviewPath();
+  const parsed = useMemo(() => parsePullRequestReviewQuickOpenQuery(query), [query]);
+  const fileSearch = useProjectPathSearch(
+    {
+      environmentId: open ? environmentId : null,
+      cwd: open ? cwd : null,
+      query: open && parsed.mode === "files" ? parsed.search : null,
+      kind: "file",
+    },
+    100,
+    { allowEmptyQuery: true },
+  );
+  const files = useMemo(
+    () =>
+      selectPullRequestReviewFiles({
+        projectPaths: fileSearch.entries.map((entry) => entry.path.replaceAll("\\", "/")),
+        changedPaths,
+        query: parsed.search,
+      }),
+    [changedPaths, fileSearch.entries, parsed.search],
+  );
+  const symbolMode = parsed.mode === "currentSymbols" || parsed.mode === "workspaceSymbols";
+  const declarationSearch = useProjectContentSearch({
+    environmentId: open && symbolMode ? environmentId : null,
+    cwd: open && symbolMode ? cwd : null,
+    query: symbolMode ? pullRequestReviewDeclarationQuery(parsed.search) : "",
+    caseSensitive: false,
+    wholeWord: false,
+    useRegex: true,
+  });
+  const currentFile = useProjectFileQuery(
+    environmentId,
+    cwd,
+    selectedPath,
+    open && parsed.mode === "currentSymbols",
+  );
+  const declarations = useMemo(() => {
+    const localMatches: ReadonlyArray<ProjectContentMatch> = currentFile.data
+      ? currentFile.data.contents.split("\n").map((lineContent, index) => ({
+          path: selectedPath ?? "",
+          lineNumber: index + 1,
+          lineContent,
+          matchRanges: [],
+        }))
+      : [];
+    const matches = parsed.mode === "currentSymbols" ? localMatches : declarationSearch.matches;
+    return selectPullRequestReviewDeclarations({ matches, query: parsed.search });
+  }, [currentFile.data, declarationSearch.matches, parsed.mode, parsed.search, selectedPath]);
+  const textSearch = useProjectContentSearch({
+    environmentId: open && parsed.mode === "text" ? environmentId : null,
+    cwd: open && parsed.mode === "text" ? cwd : null,
+    query: parsed.mode === "text" ? parsed.search : "",
+    caseSensitive: false,
+    wholeWord: false,
+    useRegex: false,
+  });
+
+  useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
+
+  const select = (path: string, line?: number, column?: number) => {
+    onSelect(path, line, column);
+    onOpenChange(false);
+  };
+  const waiting =
+    (parsed.mode === "files" && fileSearch.isPending) ||
+    (symbolMode && (declarationSearch.isPending || currentFile.isPending)) ||
+    (parsed.mode === "text" && textSearch.isPending);
+
+  return (
+    <CommandDialog open={open} onOpenChange={onOpenChange}>
+      <CommandDialogPopup
+        aria-label="Pull request quick open"
+        className="overflow-hidden p-0"
+        onBackdropPointerDown={() => onOpenChange(false)}
+      >
+        <Command mode="none" value={query} onValueChange={setQuery}>
+          <CommandInput placeholder={PLACEHOLDERS[parsed.mode]} />
+          <CommandPanel className="max-h-[min(32rem,72vh)]">
+            <CommandList>
+              <CommandEmpty>{waiting ? "Searching project…" : "No matching results."}</CommandEmpty>
+              {parsed.mode === "line" && parsed.line && selectedPath ? (
+                <CommandGroup
+                  items={[{ path: selectedPath, line: parsed.line, column: parsed.column ?? 1 }]}
+                >
+                  <CommandGroupLabel>Go to</CommandGroupLabel>
+                  <CommandCollection>
+                    {(target) => (
+                      <CommandItem
+                        value={`line:${target.line}:${target.column}`}
+                        onClick={() => select(target.path, target.line, target.column)}
+                      >
+                        <TextSearchIcon className="size-4" />
+                        <span>
+                          Line {target.line}, column {target.column}
+                        </span>
+                        <span className="ml-auto truncate font-mono text-xs text-muted-foreground">
+                          {target.path}
+                        </span>
+                      </CommandItem>
+                    )}
+                  </CommandCollection>
+                </CommandGroup>
+              ) : null}
+              {parsed.mode === "text" ? (
+                <CommandGroup items={textSearch.isPending ? [] : textSearch.matches}>
+                  <CommandGroupLabel>Workspace text</CommandGroupLabel>
+                  <CommandCollection>
+                    {(match) => (
+                      <CommandItem
+                        value={`text:${match.path}:${match.lineNumber}:${match.lineContent}`}
+                        onClick={() =>
+                          select(
+                            match.path,
+                            match.lineNumber,
+                            (match.matchRanges[0]?.start ?? 0) + 1,
+                          )
+                        }
+                      >
+                        <TextSearchIcon className="size-4 shrink-0 text-amber-500" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-mono text-xs">
+                            {match.lineContent.trim()}
+                          </span>
+                          <span className="block truncate font-mono text-[10px] text-muted-foreground">
+                            {match.path}:{match.lineNumber}
+                          </span>
+                        </span>
+                      </CommandItem>
+                    )}
+                  </CommandCollection>
+                </CommandGroup>
+              ) : null}
+              {symbolMode ? (
+                <CommandGroup items={declarations}>
+                  <CommandGroupLabel>
+                    {parsed.mode === "currentSymbols"
+                      ? "Current file symbols"
+                      : "Workspace symbols"}
+                  </CommandGroupLabel>
+                  <CommandCollection>
+                    {(declaration) => (
+                      <CommandItem
+                        value={`symbol:${declaration.path}:${declaration.line}:${declaration.name}`}
+                        onClick={() =>
+                          select(declaration.path, declaration.line, declaration.column)
+                        }
+                      >
+                        <BracesIcon className="size-4 shrink-0 text-sky-500" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm">
+                            {declaration.name}{" "}
+                            <span className="text-xs text-muted-foreground">
+                              {declaration.kind}
+                            </span>
+                          </span>
+                          <span className="block truncate font-mono text-[10px] text-muted-foreground">
+                            {declaration.path}:{declaration.line} · {declaration.detail}
+                          </span>
+                        </span>
+                      </CommandItem>
+                    )}
+                  </CommandCollection>
+                </CommandGroup>
+              ) : null}
+              {parsed.mode === "files" ? (
+                <CommandGroup items={files}>
+                  <CommandGroupLabel>
+                    {parsed.search ? "Files" : "Changed and recent files"}
+                  </CommandGroupLabel>
+                  <CommandCollection>
+                    {(file) => {
+                      const label = pathParts(file.path);
+                      return (
+                        <CommandItem
+                          value={file.path}
+                          onClick={() => select(file.path, parsed.line, parsed.column)}
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            copyPath(file.path, file.path);
+                          }}
+                        >
+                          <FileCode2Icon className="size-4 shrink-0" />
+                          <span className="min-w-0 flex-1 truncate">
+                            {label.name}{" "}
+                            <span className="text-muted-foreground">{label.parent}</span>
+                          </span>
+                          {file.changed ? (
+                            <span className="text-xs text-muted-foreground">Changed</span>
+                          ) : null}
+                        </CommandItem>
+                      );
+                    }}
+                  </CommandCollection>
+                </CommandGroup>
+              ) : null}
+            </CommandList>
+          </CommandPanel>
+          <CommandFooter className="justify-start gap-3 text-xs">
+            <span>
+              <Kbd>@</Kbd> file symbols
+            </span>
+            <span>
+              <Kbd>#</Kbd> workspace symbols
+            </span>
+            <span>
+              <Kbd>:</Kbd> line
+            </span>
+            <span>
+              <Kbd>/</Kbd> text
+            </span>
+          </CommandFooter>
+        </Command>
+      </CommandDialogPopup>
+    </CommandDialog>
+  );
+}

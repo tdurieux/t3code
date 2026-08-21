@@ -16,10 +16,12 @@ import {
   ChevronsDownUpIcon,
   ChevronsUpDownIcon,
   Columns2Icon,
+  FileCode2Icon,
   MessageSquareIcon,
   MessageSquareOffIcon,
   HistoryIcon,
   Rows3Icon,
+  SearchIcon,
   TextWrapIcon,
   TriangleAlertIcon,
   XIcon,
@@ -72,6 +74,12 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { PendingReviewCommentCard, ReviewThreadCard } from "./PullRequestReviewAnnotation";
 import { PullRequestReviewBar } from "./PullRequestReviewBar";
 import { PullRequestLineHistoryPanel } from "./PullRequestLineHistoryPanel";
+import { PullRequestFullFileView } from "./PullRequestFullFileView";
+import {
+  PullRequestReviewFileSidebar,
+  PullRequestReviewQuickOpen,
+  type PullRequestReviewFileEntry,
+} from "./PullRequestReviewNavigator";
 import {
   isFileDiffCollapsed,
   isLineInFileDiff,
@@ -238,6 +246,14 @@ export function PullRequestCodeTab({
     readonly path: string;
     readonly line: number;
   } | null>(null);
+  const [reviewQuickOpen, setReviewQuickOpen] = useState(false);
+  const [reviewViewMode, setReviewViewMode] = useState<"diff" | "file">("diff");
+  const [selectedReviewPath, setSelectedReviewPath] = useState<string | null>(null);
+  const [reviewReveal, setReviewReveal] = useState<{
+    readonly path: string;
+    readonly line: number;
+    readonly column: number;
+  } | null>(null);
   const [threadPending, setThreadPending] = useState(false);
   const [orphansOpen, setOrphansOpen] = useState(false);
   // Closed by default so the review form does not permanently eat vertical space below the
@@ -268,8 +284,23 @@ export function PullRequestCodeTab({
     setVisibleCommitCount(COMMIT_PAGE_SIZE);
     setOrphansOpen(false);
     setSliceState({ key: scopeKey, cursor: null, slices: NO_SLICES });
+    setSelectedReviewPath(null);
+    setReviewViewMode("diff");
+    setReviewReveal(null);
     parseCache.current.clear();
   }, [reviewWorkspace?.cwd, scopeKey]);
+
+  useEffect(() => {
+    if (reviewWorkspace === undefined) return;
+    const openQuickOpen = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "k") {
+        event.preventDefault();
+        setReviewQuickOpen(true);
+      }
+    };
+    window.addEventListener("keydown", openQuickOpen);
+    return () => window.removeEventListener("keydown", openQuickOpen);
+  }, [reviewWorkspace]);
 
   const loadedSlices = sliceState.key === scopeKey ? sliceState.slices : NO_SLICES;
   const cursor = sliceState.key === scopeKey ? sliceState.cursor : null;
@@ -414,6 +445,20 @@ export function PullRequestCodeTab({
       ),
     [parsedSlices],
   );
+  const reviewFiles = useMemo<ReadonlyArray<PullRequestReviewFileEntry>>(
+    () =>
+      files.map((file) => ({
+        path: resolveFileDiffPath(file),
+        additions: file.additionLines.length,
+        deletions: file.deletionLines.length,
+      })),
+    [files],
+  );
+  useEffect(() => {
+    if (reviewWorkspace === undefined || selectedReviewPath !== null) return;
+    const first = reviewFiles[0];
+    if (first) setSelectedReviewPath(first.path);
+  }, [reviewFiles, reviewWorkspace, selectedReviewPath]);
   const nextCursor = loadedSlices.at(-1)?.nextCursor ?? null;
   // What a slice withheld: the host declining to inline part of it, or a patch the viewer could
   // not structure and so dropped. Neither says anything about there being more to fetch.
@@ -543,6 +588,13 @@ export function PullRequestCodeTab({
       placedThreadIds,
       toggledFiles,
     ],
+  );
+  const reviewItems = useMemo(
+    () =>
+      reviewWorkspace === undefined || selectedReviewPath === null
+        ? items
+        : items.filter((item) => resolveFileDiffPath(item.fileDiff) === selectedReviewPath),
+    [items, reviewWorkspace, selectedReviewPath],
   );
   const lineStat = useMemo(() => getDiffLineStat(files), [files]);
   const omittedFileStats = useMemo(
@@ -1017,6 +1069,20 @@ export function PullRequestCodeTab({
     }
   }, [commit, onSelectedCommitChange, selectedCommit]);
   const scopeLabel = selectedCommit ? selectedCommit.messageHeadline : "All commits";
+  const selectReviewPath = useCallback(
+    (path: string, line?: number, column?: number) => {
+      setSelectedReviewPath(path);
+      setHistoryTarget(null);
+      if (line !== undefined) {
+        setReviewReveal({ path, line, column: column ?? 1 });
+        setReviewViewMode("file");
+        return;
+      }
+      setReviewReveal(null);
+      if (!reviewFiles.some((file) => file.path === path)) setReviewViewMode("file");
+    },
+    [reviewFiles],
+  );
   /**
    * The same controls the thread diff panel carries, in the same order, minus the
    * ignore-whitespace toggle: that is `git diff -w` on the server, and no host's pull request
@@ -1077,6 +1143,23 @@ export function PullRequestCodeTab({
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
+        {reviewWorkspace && selectedReviewPath ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  className="hidden min-w-0 max-w-72 items-center gap-1.5 rounded px-1.5 py-1 font-mono text-[10px] text-foreground hover:bg-accent sm:flex"
+                  onClick={() => setReviewQuickOpen(true)}
+                />
+              }
+            >
+              <FileCode2Icon className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate">{selectedReviewPath}</span>
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">{selectedReviewPath}</TooltipPopup>
+          </Tooltip>
+        ) : null}
         {canInspectLineHistory ? (
           <span className="hidden shrink-0 items-center gap-1 text-violet-600 sm:flex dark:text-violet-300">
             <HistoryIcon className="size-3.5" />
@@ -1125,7 +1208,50 @@ export function PullRequestCodeTab({
           deletions={lineStat.deletions}
           className="mr-1"
         />
-        {fileKeys.length > 0 ? (
+        {reviewWorkspace ? (
+          <>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label="Quick open files and symbols"
+                    onClick={() => setReviewQuickOpen(true)}
+                  />
+                }
+              >
+                <SearchIcon className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">Quick open · ⌘K</TooltipPopup>
+            </Tooltip>
+            <ToggleGroup
+              className="shrink-0 gap-1"
+              size="sm"
+              value={[reviewViewMode]}
+              onValueChange={(value) => {
+                const next = value[0];
+                if (next === "diff" || next === "file") setReviewViewMode(next);
+              }}
+            >
+              <Toggle
+                aria-label="Selected file diff"
+                value="diff"
+                variant="ghost"
+                disabled={
+                  selectedReviewPath === null ||
+                  !reviewFiles.some((file) => file.path === selectedReviewPath)
+                }
+              >
+                <Rows3Icon className="size-3.5" />
+              </Toggle>
+              <Toggle aria-label="Full file" value="file" variant="ghost">
+                <FileCode2Icon className="size-3.5" />
+              </Toggle>
+            </ToggleGroup>
+          </>
+        ) : fileKeys.length > 0 ? (
           <Tooltip>
             <TooltipTrigger
               render={
@@ -1149,24 +1275,26 @@ export function PullRequestCodeTab({
             </TooltipPopup>
           </Tooltip>
         ) : null}
-        <ToggleGroup
-          className="shrink-0 gap-1"
-          size="sm"
-          value={[diffRenderMode]}
-          onValueChange={(value) => {
-            const next = value[0];
-            if (next === "stacked" || next === "split") {
-              setDiffRenderMode(next);
-            }
-          }}
-        >
-          <Toggle aria-label="Stacked diff view" value="stacked" variant="ghost">
-            <Rows3Icon className="size-3.5" />
-          </Toggle>
-          <Toggle aria-label="Split diff view" value="split" variant="ghost">
-            <Columns2Icon className="size-3.5" />
-          </Toggle>
-        </ToggleGroup>
+        {reviewViewMode === "diff" ? (
+          <ToggleGroup
+            className="shrink-0 gap-1"
+            size="sm"
+            value={[diffRenderMode]}
+            onValueChange={(value) => {
+              const next = value[0];
+              if (next === "stacked" || next === "split") {
+                setDiffRenderMode(next);
+              }
+            }}
+          >
+            <Toggle aria-label="Stacked diff view" value="stacked" variant="ghost">
+              <Rows3Icon className="size-3.5" />
+            </Toggle>
+            <Toggle aria-label="Split diff view" value="split" variant="ghost">
+              <Columns2Icon className="size-3.5" />
+            </Toggle>
+          </ToggleGroup>
+        ) : null}
         <Tooltip>
           <TooltipTrigger
             render={
@@ -1278,6 +1406,14 @@ export function PullRequestCodeTab({
   return (
     <DiffWorkerPoolProvider>
       <div className="flex h-full min-h-0 flex-col lg:flex-row">
+        {reviewWorkspace ? (
+          <PullRequestReviewFileSidebar
+            files={reviewFiles}
+            selectedPath={selectedReviewPath}
+            onSelect={selectReviewPath}
+            onOpenQuickOpen={() => setReviewQuickOpen(true)}
+          />
+        ) : null}
         <div className="flex min-w-0 flex-1 flex-col">
           {toolbar}
           {/* Above the code, closed, and counted: these belong to the change rather than to any
@@ -1377,25 +1513,34 @@ export function PullRequestCodeTab({
             {/* The viewer virtualizes against the element it is told is scrolling and places its
               rows absolutely, so it has to own that element — the thread diff panel hands it the
               same one. Scrolling from a parent instead leaves it painting over its neighbours. */}
-            <StyledDiffCodeView<ReviewAnnotationGroup>
-              // Keep scrollbar space stable so file metadata and line numbers do not shift as a
-              // diff crosses the overflow boundary. The viewer is itself focusable for keyboard
-              // interaction, but its native host outline clips and competes with the focus
-              // indicators on its actual controls.
-              className="h-full overflow-auto [scrollbar-gutter:stable]"
-              items={items}
-              selectedLines={selectedLines}
-              onSelectedLinesChange={setSelectedLines}
-              options={diffViewOptions}
-              // The viewer owns the scroll container, so the sentinel that asks for the next slice
-              // has to live inside it — at the end of the files, where reaching it means the reader
-              // is running out of diff.
-              renderCodeViewFooter={renderCodeViewFooter}
-              renderHeaderPrefix={renderHeaderPrefix}
-              renderHeaderMetadata={renderHeaderMetadata}
-              renderAnnotation={renderAnnotation}
-              unsafeCSSExtra={REPLACE_FILE_COUNTS_CSS}
-            />
+            {reviewWorkspace && reviewViewMode === "file" && selectedReviewPath ? (
+              <PullRequestFullFileView
+                environmentId={reviewWorkspace.environmentId}
+                cwd={reviewWorkspace.cwd}
+                path={selectedReviewPath}
+                revealLine={reviewReveal?.path === selectedReviewPath ? reviewReveal.line : null}
+              />
+            ) : (
+              <StyledDiffCodeView<ReviewAnnotationGroup>
+                // Keep scrollbar space stable so file metadata and line numbers do not shift as a
+                // diff crosses the overflow boundary. The viewer is itself focusable for keyboard
+                // interaction, but its native host outline clips and competes with the focus
+                // indicators on its actual controls.
+                className="h-full overflow-auto [scrollbar-gutter:stable]"
+                items={reviewItems}
+                selectedLines={selectedLines}
+                onSelectedLinesChange={setSelectedLines}
+                options={diffViewOptions}
+                // The viewer owns the scroll container, so the sentinel that asks for the next slice
+                // has to live inside it — at the end of the files, where reaching it means the reader
+                // is running out of diff.
+                renderCodeViewFooter={renderCodeViewFooter}
+                renderHeaderPrefix={renderHeaderPrefix}
+                renderHeaderMetadata={renderHeaderMetadata}
+                renderAnnotation={renderAnnotation}
+                unsafeCSSExtra={REPLACE_FILE_COUNTS_CSS}
+              />
+            )}
             {reviewOverlay}
           </div>
           {unstructured}
@@ -1408,6 +1553,17 @@ export function PullRequestCodeTab({
             path={historyTarget.path}
             line={historyTarget.line}
             onClose={() => setHistoryTarget(null)}
+          />
+        ) : null}
+        {reviewWorkspace ? (
+          <PullRequestReviewQuickOpen
+            open={reviewQuickOpen}
+            environmentId={reviewWorkspace.environmentId}
+            cwd={reviewWorkspace.cwd}
+            changedPaths={reviewFiles.map((file) => file.path)}
+            selectedPath={selectedReviewPath}
+            onOpenChange={setReviewQuickOpen}
+            onSelect={selectReviewPath}
           />
         ) : null}
       </div>
