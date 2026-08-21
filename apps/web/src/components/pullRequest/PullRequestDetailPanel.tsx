@@ -765,9 +765,13 @@ export function PullRequestDetailPanel({
   };
 
   /** A question about the change, which needs a thread and nothing else. */
-  const startAsk = async (kind: string, task: ThreadTask) => {
+  const startAsk = async (
+    kind: string,
+    task: ThreadTask,
+    options?: { readonly forceNew?: boolean },
+  ) => {
     if (!detail || handoff !== null) return;
-    if (attachTarget !== null) {
+    if (attachTarget !== null && options?.forceNew !== true) {
       writeTaskToComposer(attachTarget, task);
       toastManager.add({
         type: "success",
@@ -974,6 +978,23 @@ export function PullRequestDetailPanel({
         comment: selection.comment,
         request: selection.request,
       }),
+    );
+  };
+
+  const startDedicatedReviewConversation = (selection: PullRequestAgentSelectionInput) => {
+    if (!detail) return;
+    void startAsk(
+      "review-handoff",
+      buildAddSelectionToAgentHandoff({
+        number: detail.number,
+        title: detail.title,
+        url: detail.url,
+        headBranch: detail.headBranch,
+        baseBranch: detail.baseBranch,
+        comment: selection.comment,
+        request: selection.request,
+      }),
+      { forceNew: true },
     );
   };
 
@@ -2033,7 +2054,8 @@ export function PullRequestDetailPanel({
               <div className={cn("absolute inset-0", tab !== "code" && "invisible")}>
                 <Suspense fallback={<DiffPanelLoadingState label="Loading pull request diff..." />}>
                   <PullRequestCodeTab
-                    {...(attachTarget ? { onAddToAgentSelection: addSelectionToAgent } : {})}
+                    onAddToAgentSelection={addSelectionToAgent}
+                    onStartReviewConversation={startDedicatedReviewConversation}
                     environmentId={environmentId}
                     reference={reference}
                     detail={detail}

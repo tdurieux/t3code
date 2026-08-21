@@ -1019,6 +1019,27 @@ describe("asking about a change rather than working on it", () => {
     expect(handoff.reviewComments[0]?.text).not.toContain("Do not change any code");
     expect(handoff.reviewComments[1]?.text).toBe("");
   });
+
+  it("keeps a structured handoff packet in its composer chip", () => {
+    const handoff = buildAddSelectionToAgentHandoff({
+      ...base,
+      request: "Review the remaining changes.",
+      comment: {
+        id: "pull-request-handoff:42:head",
+        sectionId: "pull-request:42",
+        sectionTitle: "PR #42 review handoff",
+        filePath: "PR #42",
+        startIndex: 0,
+        endIndex: 0,
+        rangeLabel: "50% reviewed",
+        text: "Review progress\n- 2/4 hunks visited",
+        diff: "",
+      },
+    });
+
+    expect(handoff.prompt).toBe("Review the remaining changes.");
+    expect(handoff.reviewComments[1]?.text).toContain("2/4 hunks visited");
+  });
 });
 
 describe("a second ask into the same composer", () => {

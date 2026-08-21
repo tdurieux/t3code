@@ -4,6 +4,7 @@ import {
   ClipboardCopyIcon,
   ExternalLinkIcon,
   LoaderCircleIcon,
+  PinIcon,
   RefreshCwIcon,
   SearchIcon,
   XIcon,
@@ -19,6 +20,10 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { toastManager } from "../ui/toast";
 import { PullRequestCheckStatusIcon, pullRequestCheckStatusLabel } from "./pullRequestPresentation";
+import {
+  pullRequestCiEvidenceId,
+  type PullRequestCiEvidence,
+} from "./pullRequestReviewHandoffStore";
 
 const MAX_RENDERED_LOG_LINES = 1_000;
 
@@ -30,11 +35,15 @@ export function PullRequestReviewChecksPanel({
   environmentId,
   cwd,
   checks,
+  pinnedEvidence,
+  onToggleEvidence,
   onClose,
 }: {
   readonly environmentId: EnvironmentId;
   readonly cwd: string;
   readonly checks: ReadonlyArray<PullRequestCheck>;
+  readonly pinnedEvidence: ReadonlyArray<PullRequestCiEvidence>;
+  readonly onToggleEvidence: (evidence: PullRequestCiEvidence) => void;
   readonly onClose: () => void;
 }) {
   const [selected, setSelected] = useState<PullRequestCheck | null>(null);
@@ -60,6 +69,10 @@ export function PullRequestReviewChecksPanel({
   const visibleText = useMemo(
     () => visibleLines.map((line) => `${line.number}\t${line.text}`).join("\n"),
     [visibleLines],
+  );
+  const pinnedEvidenceIds = useMemo(
+    () => new Set(pinnedEvidence.map((evidence) => evidence.id)),
+    [pinnedEvidence],
   );
   const { copyToClipboard, isCopied } = useCopyToClipboard({
     target: "visible CI log",
@@ -179,10 +192,51 @@ export function PullRequestReviewChecksPanel({
             </div>
           ) : (
             <>
-              <div className="min-h-0 flex-1 overflow-auto bg-[var(--code-background,var(--background))] p-3">
-                <pre className="whitespace-pre font-mono text-[10px] leading-4 text-foreground">
-                  {visibleText || "No log lines matched."}
-                </pre>
+              <div className="min-h-0 flex-1 overflow-auto bg-[var(--code-background,var(--background))] py-3 font-mono text-[10px] leading-4 text-foreground">
+                {visibleLines.length > 0 && selected.url ? (
+                  visibleLines.map((line) => {
+                    const id = pullRequestCiEvidenceId({
+                      checkName: selected.name,
+                      checkUrl: selected.url!,
+                      line: line.number,
+                    });
+                    const pinned = pinnedEvidenceIds.has(id);
+                    return (
+                      <div
+                        key={line.number}
+                        className={`group flex min-w-max items-start px-2 ${pinned ? "bg-violet-500/10" : "hover:bg-muted/30"}`}
+                      >
+                        <button
+                          type="button"
+                          className="mr-1 flex size-4 shrink-0 items-center justify-center text-muted-foreground opacity-0 group-hover:opacity-100 data-[pinned=true]:text-violet-500 data-[pinned=true]:opacity-100"
+                          data-pinned={pinned}
+                          aria-label={
+                            pinned
+                              ? `Unpin CI log line ${line.number}`
+                              : `Pin CI log line ${line.number}`
+                          }
+                          onClick={() =>
+                            onToggleEvidence({
+                              id,
+                              checkName: selected.name,
+                              checkUrl: selected.url!,
+                              line: line.number,
+                              text: line.text,
+                            })
+                          }
+                        >
+                          <PinIcon className="size-3" />
+                        </button>
+                        <span className="w-10 shrink-0 select-none pr-2 text-right text-muted-foreground">
+                          {line.number}
+                        </span>
+                        <code className="whitespace-pre">{line.text || " "}</code>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="px-3 text-muted-foreground">No log lines matched.</p>
+                )}
               </div>
               <p className="shrink-0 border-t border-border/60 px-3 py-1 text-[10px] text-muted-foreground">
                 {query

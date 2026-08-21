@@ -837,7 +837,12 @@ export function buildAddSelectionToAgentHandoff(input: {
 }): FixFindingsHandoff {
   return {
     prompt: bounded(input.request),
-    reviewComments: [pullRequestContextComment(input, []), { ...input.comment, text: "" }],
+    reviewComments: [
+      pullRequestContextComment(input, []),
+      input.comment.id.startsWith("pull-request-handoff:")
+        ? input.comment
+        : { ...input.comment, text: "" },
+    ],
   };
 }
 

@@ -11,6 +11,7 @@ import type {
   PullRequestThreadCommentsResult,
 } from "@t3tools/contracts";
 import {
+  BotIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   ChevronsDownUpIcon,
@@ -79,6 +80,7 @@ import { PullRequestLineHistoryPanel } from "./PullRequestLineHistoryPanel";
 import { PullRequestFullFileView } from "./PullRequestFullFileView";
 import { PullRequestReviewChecksPanel } from "./PullRequestReviewChecksPanel";
 import { PullRequestReviewCoveragePanel } from "./PullRequestReviewCoveragePanel";
+import { PullRequestReviewHandoffPanel } from "./PullRequestReviewHandoffPanel";
 import { PullRequestSemanticPanel } from "./PullRequestSemanticPanel";
 import {
   PullRequestReviewFileSidebar,
@@ -108,6 +110,10 @@ import {
   usePullRequestReviewNavigationStore,
 } from "./pullRequestReviewNavigationStore";
 import type { PullRequestSemanticTarget } from "./pullRequestSemanticIndex.logic";
+import {
+  pullRequestReviewCiEvidence,
+  usePullRequestReviewHandoffStore,
+} from "./pullRequestReviewHandoffStore";
 import { PullRequestDiffStat, PullRequestMetaLine } from "./pullRequestPresentation";
 import {
   nextPendingReviewCommentId,
@@ -228,6 +234,7 @@ export function PullRequestCodeTab({
   fixFindingLabel = "Fix in a thread",
   onFixFinding,
   onAddToAgentSelection,
+  onStartReviewConversation,
   reviewWorkspace,
   onRefresh,
   refreshToken = 0,
@@ -244,6 +251,8 @@ export function PullRequestCodeTab({
   onFixFinding?: (finding: PullRequestFinding) => void;
   /** Absent where there is no active agent composer to receive a local comment. */
   onAddToAgentSelection?: (input: PullRequestAgentSelectionInput) => void;
+  /** Opens a fresh review-focused agent conversation even when another composer is active. */
+  onStartReviewConversation?: (input: PullRequestAgentSelectionInput) => void;
   /** Prepared pull-request checkout used by local Git history; absent in the normal Code view. */
   reviewWorkspace?: PullRequestReviewWorkspace;
   onRefresh: () => void;
@@ -272,6 +281,7 @@ export function PullRequestCodeTab({
   const [reviewQuickOpen, setReviewQuickOpen] = useState(false);
   const [reviewChecksOpen, setReviewChecksOpen] = useState(false);
   const [reviewCoverageOpen, setReviewCoverageOpen] = useState(false);
+  const [reviewHandoffOpen, setReviewHandoffOpen] = useState(false);
   const [semanticOpen, setSemanticOpen] = useState(false);
   const [reviewCommentsVisible, setReviewCommentsVisible] = useState(true);
   const [reviewViewMode, setReviewViewMode] = useState<"diff" | "file">("diff");
@@ -316,6 +326,7 @@ export function PullRequestCodeTab({
     setReviewReveal(null);
     setReviewChecksOpen(false);
     setReviewCoverageOpen(false);
+    setReviewHandoffOpen(false);
     setSemanticOpen(false);
     setReviewCommentsVisible(true);
     parseCache.current.clear();
@@ -500,6 +511,14 @@ export function PullRequestCodeTab({
   const openNavigation = usePullRequestReviewNavigationStore((store) => store.open);
   const moveNavigation = usePullRequestReviewNavigationStore((store) => store.move);
   const togglePinnedSymbol = usePullRequestReviewNavigationStore((store) => store.togglePin);
+  const handoffEntries = usePullRequestReviewHandoffStore((store) => store.byReviewKey);
+  const ciEvidence = useMemo(
+    () => pullRequestReviewCiEvidence(handoffEntries, progressKey),
+    [handoffEntries, progressKey],
+  );
+  const toggleCiEvidence = usePullRequestReviewHandoffStore((store) => store.toggleEvidence);
+  const removeCiEvidence = usePullRequestReviewHandoffStore((store) => store.removeEvidence);
+  const clearCiEvidence = usePullRequestReviewHandoffStore((store) => store.clearEvidence);
   const reviewHunks = useMemo(() => buildPullRequestReviewHunks(files), [files]);
   const coverage = useMemo(
     () =>
@@ -1204,6 +1223,7 @@ export function PullRequestCodeTab({
       setSemanticOpen(true);
       setReviewCoverageOpen(false);
       setReviewChecksOpen(false);
+      setReviewHandoffOpen(false);
       setHistoryTarget(null);
     },
     [openNavigation, progressKey],
@@ -1386,6 +1406,7 @@ export function PullRequestCodeTab({
                     onClick={() => {
                       setHistoryTarget(null);
                       setReviewChecksOpen(false);
+                      setReviewHandoffOpen(false);
                       setReviewCoverageOpen((open) => !open);
                     }}
                   />
@@ -1409,6 +1430,7 @@ export function PullRequestCodeTab({
                     onClick={() => {
                       setHistoryTarget(null);
                       setReviewCoverageOpen(false);
+                      setReviewHandoffOpen(false);
                       setReviewChecksOpen((open) => !open);
                     }}
                   />
@@ -1417,6 +1439,31 @@ export function PullRequestCodeTab({
                 <ListChecksIcon className="size-3.5" />
               </TooltipTrigger>
               <TooltipPopup side="top">Checks and workflow logs</TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant={reviewHandoffOpen ? "secondary" : "ghost"}
+                    aria-label="Review agent handoff"
+                    aria-pressed={reviewHandoffOpen}
+                    onClick={() => {
+                      setHistoryTarget(null);
+                      setReviewCoverageOpen(false);
+                      setReviewChecksOpen(false);
+                      setSemanticOpen(false);
+                      setReviewHandoffOpen((open) => !open);
+                    }}
+                  />
+                }
+              >
+                <BotIcon className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">
+                Agent handoff · {pinnedSymbols.length} symbols · {ciEvidence.length} CI lines
+              </TooltipPopup>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger
@@ -1765,7 +1812,27 @@ export function PullRequestCodeTab({
           </div>
           {unstructured}
         </div>
-        {reviewCoverageOpen && reviewWorkspace ? (
+        {reviewHandoffOpen && reviewWorkspace ? (
+          <PullRequestReviewHandoffPanel
+            detail={detail}
+            revision={reviewWorkspace.revision}
+            coverage={coverage}
+            pinnedSymbols={pinnedSymbols}
+            ciEvidence={ciEvidence}
+            pending={pendingFinding === "review-handoff"}
+            onNavigateSymbol={openSemanticTarget}
+            onRemoveEvidence={(evidenceId) => {
+              if (progressKey) removeCiEvidence(progressKey, evidenceId);
+            }}
+            onClearEvidence={() => {
+              if (progressKey) clearCiEvidence(progressKey);
+            }}
+            {...(onStartReviewConversation
+              ? { onStartConversation: onStartReviewConversation }
+              : {})}
+            onClose={() => setReviewHandoffOpen(false)}
+          />
+        ) : reviewCoverageOpen && reviewWorkspace ? (
           <PullRequestReviewCoveragePanel
             coverage={coverage}
             onClose={() => setReviewCoverageOpen(false)}
@@ -1782,6 +1849,10 @@ export function PullRequestCodeTab({
             environmentId={reviewWorkspace.environmentId}
             cwd={reviewWorkspace.cwd}
             checks={detail.checks}
+            pinnedEvidence={ciEvidence}
+            onToggleEvidence={(evidence) => {
+              if (progressKey) toggleCiEvidence(progressKey, evidence);
+            }}
             onClose={() => setReviewChecksOpen(false)}
           />
         ) : historyTarget && reviewWorkspace ? (
