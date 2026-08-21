@@ -77,6 +77,29 @@ T3 Code works with the platforms your team already uses:
 Line history follows the current file in the pull request checkout. Deleted lines do not exist in
 that checkout, so select an unchanged or added line instead.
 
+**Track what you have reviewed**
+
+- Open **Review coverage** to see how many changed hunks you have visited and how many files you
+  have marked reviewed
+- Mark files reviewed from the file navigator. Progress is saved for the current pull request
+  revision, so a later commit starts with separate coverage
+
+**Navigate code by meaning**
+
+- Select a symbol in the code viewer to open a syntax-highlighted Peek with its definition,
+  references, callers, callees, and usages
+- Follow a result without leaving the review. Back and forward actions keep a navigation history
+- Pin definitions that matter to the review. The ownership gutter combines Git history with the
+  matching CODEOWNERS rule and calls out ownership drift from the base revision
+
+**Hand review context to an agent**
+
+- Pin relevant lines from a GitHub Actions log and keep important symbols pinned while you review
+- Open **Review agent handoff** to inspect review coverage, pinned symbols, and CI evidence before
+  starting a dedicated agent conversation
+- The handoff sends a bounded context packet instead of the complete diff or log. The question
+  remains visible in the new conversation, and the packet stays attached as review context
+
 **Fix what you wrote, in place**
 
 - Rewrite a pull request's title and description from the review itself, in Markdown, with a
