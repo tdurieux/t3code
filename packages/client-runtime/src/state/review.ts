@@ -42,5 +42,10 @@ export function createReviewEnvironmentAtoms<R, E>(
       tag: WS_METHODS.reviewGetLineHistory,
       staleTimeMs: 5 * 60_000,
     }),
+    ciLog: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:review:ci-log",
+      tag: WS_METHODS.reviewGetCiLog,
+      staleTimeMs: 60_000,
+    }),
   };
 }

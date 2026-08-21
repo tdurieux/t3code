@@ -58,6 +58,9 @@ import {
   ReviewDiffPreviewError,
   ReviewDiffPreviewInput,
   ReviewDiffPreviewResult,
+  ReviewCiLogError,
+  ReviewCiLogInput,
+  ReviewCiLogResult,
   ReviewLineHistoryError,
   ReviewLineHistoryInput,
   ReviewLineHistoryResult,
@@ -251,6 +254,7 @@ export const WS_METHODS = {
   reviewGetDiffPreview: "review.getDiffPreview",
   reviewGetDiffFileContents: "review.getDiffFileContents",
   reviewGetLineHistory: "review.getLineHistory",
+  reviewGetCiLog: "review.getCiLog",
 
   // Terminal methods
   terminalOpen: "terminal.open",
@@ -799,6 +803,12 @@ export const WsReviewGetLineHistoryRpc = Rpc.make(WS_METHODS.reviewGetLineHistor
   error: Schema.Union([ReviewLineHistoryError, VcsError, EnvironmentAuthorizationError]),
 });
 
+export const WsReviewGetCiLogRpc = Rpc.make(WS_METHODS.reviewGetCiLog, {
+  payload: ReviewCiLogInput,
+  success: ReviewCiLogResult,
+  error: Schema.Union([ReviewCiLogError, VcsError, EnvironmentAuthorizationError]),
+});
+
 export const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
   payload: TerminalOpenInput,
   success: TerminalSessionSnapshot,
@@ -1097,6 +1107,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsReviewGetDiffPreviewRpc,
   WsReviewGetDiffFileContentsRpc,
   WsReviewGetLineHistoryRpc,
+  WsReviewGetCiLogRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
   WsTerminalWriteRpc,

@@ -7,6 +7,7 @@ import * as Path from "effect/Path";
 
 import {
   ReviewLineHistoryError,
+  ReviewCiLogError,
   VcsRepositoryDetectionError,
   VcsUnsupportedOperationError,
   type ReviewDiffFileContentsInput,
@@ -16,6 +17,8 @@ import {
   type ReviewDiffPreviewResult,
   type ReviewLineHistoryInput,
   type ReviewLineHistoryResult,
+  type ReviewCiLogInput,
+  type ReviewCiLogResult,
   type VcsError,
 } from "@t3tools/contracts";
 
@@ -34,6 +37,7 @@ import {
   parseGitLineHistory,
   toReviewLineHistoryCommit,
 } from "./reviewLineHistory.ts";
+import { githubActionsLogArgs, parseGitHubActionsLogTarget } from "./reviewCiLog.ts";
 
 export class ReviewService extends Context.Service<
   ReviewService,
@@ -47,6 +51,9 @@ export class ReviewService extends Context.Service<
     readonly getLineHistory: (
       input: ReviewLineHistoryInput,
     ) => Effect.Effect<ReviewLineHistoryResult, ReviewLineHistoryError | VcsError>;
+    readonly getCiLog: (
+      input: ReviewCiLogInput,
+    ) => Effect.Effect<ReviewCiLogResult, ReviewCiLogError | VcsError>;
   }
 >()("t3/review/ReviewService") {}
 
@@ -86,7 +93,8 @@ export const make = Effect.gen(function* () {
     operation:
       | "ReviewService.getDiffPreview"
       | "ReviewService.getDiffFileContents"
-      | "ReviewService.getLineHistory",
+      | "ReviewService.getLineHistory"
+      | "ReviewService.getCiLog",
     cwd: string,
   ) {
     const [candidate, workspaceRoot, worktreesRoot] = yield* Effect.all([
@@ -107,9 +115,52 @@ export const make = Effect.gen(function* () {
           ? "Review diff preview cwd must stay within the configured workspace root."
           : operation === "ReviewService.getDiffFileContents"
             ? "Review diff file contents cwd must stay within the configured workspace root."
-            : "Review line history cwd must stay within the configured workspace root.",
+            : operation === "ReviewService.getLineHistory"
+              ? "Review line history cwd must stay within the configured workspace root."
+              : "Review CI log cwd must stay within the configured workspace root.",
     });
   });
+
+  const getCiLog: ReviewService["Service"]["getCiLog"] = Effect.fn("ReviewService.getCiLog")(
+    function* (input) {
+      const operation = "ReviewService.getCiLog";
+      const cwd = yield* assertWorkspaceBoundCwd(operation, input.cwd);
+      const target = parseGitHubActionsLogTarget(input.checkUrl);
+      if (target === null) {
+        return yield* new ReviewCiLogError({
+          operation,
+          cwd,
+          checkName: input.checkName,
+          detail:
+            "In-app logs are currently available for GitHub Actions checks. Open this check on its provider instead.",
+        });
+      }
+      const output = yield* vcsProcess.run({
+        operation,
+        command: "gh",
+        args: githubActionsLogArgs(target),
+        cwd,
+        allowNonZeroExit: true,
+        timeoutMs: 30_000,
+        maxOutputBytes: 4_000_000,
+      });
+      if (output.exitCode !== 0) {
+        return yield* new ReviewCiLogError({
+          operation,
+          cwd,
+          checkName: input.checkName,
+          detail: output.stderr.trim() || "GitHub CLI could not load this workflow log.",
+        });
+      }
+      return {
+        checkName: input.checkName,
+        checkUrl: input.checkUrl,
+        content: output.stdout,
+        truncated: output.stdoutTruncated,
+        generatedAt: yield* DateTime.now,
+      };
+    },
+  );
 
   const getLineHistory: ReviewService["Service"]["getLineHistory"] = Effect.fn(
     "ReviewService.getLineHistory",
@@ -349,6 +400,7 @@ export const make = Effect.gen(function* () {
     getDiffPreview,
     getDiffFileContents,
     getLineHistory,
+    getCiLog,
   });
 });
 

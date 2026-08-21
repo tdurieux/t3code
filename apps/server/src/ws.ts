@@ -2179,6 +2179,10 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.reviewGetLineHistory, review.getLineHistory(input), {
             "rpc.aggregate": "review",
           }),
+        [WS_METHODS.reviewGetCiLog]: (input) =>
+          observeRpcEffect(WS_METHODS.reviewGetCiLog, review.getCiLog(input), {
+            "rpc.aggregate": "review",
+          }),
         [WS_METHODS.terminalOpen]: (input) =>
           observeRpcEffect(WS_METHODS.terminalOpen, terminalManager.open(input), {
             "rpc.aggregate": "terminal",

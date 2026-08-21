@@ -160,3 +160,33 @@ export class ReviewLineHistoryError extends Schema.TaggedErrorClass<ReviewLineHi
     return this.detail;
   }
 }
+
+export const ReviewCiLogInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  checkName: TrimmedNonEmptyString,
+  checkUrl: TrimmedNonEmptyString,
+});
+export type ReviewCiLogInput = typeof ReviewCiLogInput.Type;
+
+export const ReviewCiLogResult = Schema.Struct({
+  checkName: TrimmedNonEmptyString,
+  checkUrl: TrimmedNonEmptyString,
+  content: Schema.String,
+  truncated: Schema.Boolean,
+  generatedAt: Schema.DateTimeUtc,
+});
+export type ReviewCiLogResult = typeof ReviewCiLogResult.Type;
+
+export class ReviewCiLogError extends Schema.TaggedErrorClass<ReviewCiLogError>()(
+  "ReviewCiLogError",
+  {
+    operation: Schema.String,
+    cwd: Schema.String,
+    checkName: Schema.String,
+    detail: Schema.String,
+  },
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}

@@ -108,6 +108,51 @@ describe("ReviewService", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("rejects CI log cwd outside the configured workspace roots", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const outsideRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-outside-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+
+      const error = yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        return yield* review
+          .getCiLog({
+            cwd: outsideRoot,
+            checkName: "test",
+            checkUrl: "https://github.com/t3tools/t3code/actions/runs/123",
+          })
+          .pipe(Effect.flip);
+      }).pipe(Effect.provide(makeLayer({ workspaceRoot, baseDir })));
+
+      assert.strictEqual(error._tag, "VcsRepositoryDetectionError");
+      assert.strictEqual(error.operation, "ReviewService.getCiLog");
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("explains when a check provider cannot supply in-app logs", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+
+      const error = yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        return yield* review
+          .getCiLog({
+            cwd: workspaceRoot,
+            checkName: "build",
+            checkUrl: "https://ci.example.com/build/123",
+          })
+          .pipe(Effect.flip);
+      }).pipe(Effect.provide(makeLayer({ workspaceRoot, baseDir })));
+
+      assert.strictEqual(error._tag, "ReviewCiLogError");
+      assert.match(error.message, /GitHub Actions/);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("preserves unexpected path-resolution failures", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

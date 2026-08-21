@@ -20,6 +20,7 @@ import {
   MessageSquareIcon,
   MessageSquareOffIcon,
   HistoryIcon,
+  ListChecksIcon,
   Rows3Icon,
   SearchIcon,
   TextWrapIcon,
@@ -75,6 +76,7 @@ import { PendingReviewCommentCard, ReviewThreadCard } from "./PullRequestReviewA
 import { PullRequestReviewBar } from "./PullRequestReviewBar";
 import { PullRequestLineHistoryPanel } from "./PullRequestLineHistoryPanel";
 import { PullRequestFullFileView } from "./PullRequestFullFileView";
+import { PullRequestReviewChecksPanel } from "./PullRequestReviewChecksPanel";
 import {
   PullRequestReviewFileSidebar,
   PullRequestReviewQuickOpen,
@@ -247,6 +249,7 @@ export function PullRequestCodeTab({
     readonly line: number;
   } | null>(null);
   const [reviewQuickOpen, setReviewQuickOpen] = useState(false);
+  const [reviewChecksOpen, setReviewChecksOpen] = useState(false);
   const [reviewViewMode, setReviewViewMode] = useState<"diff" | "file">("diff");
   const [selectedReviewPath, setSelectedReviewPath] = useState<string | null>(null);
   const [reviewReveal, setReviewReveal] = useState<{
@@ -287,6 +290,7 @@ export function PullRequestCodeTab({
     setSelectedReviewPath(null);
     setReviewViewMode("diff");
     setReviewReveal(null);
+    setReviewChecksOpen(false);
     parseCache.current.clear();
   }, [reviewWorkspace?.cwd, scopeKey]);
 
@@ -690,6 +694,7 @@ export function PullRequestCodeTab({
       const position = resolveDiffReviewPosition(file, range.end, range.endSide ?? range.side);
       if (position === null) return;
       if (canInspectLineHistory) {
+        setReviewChecksOpen(false);
         if (position.kind === "deleted") {
           setHistoryTarget(null);
           toastManager.add({
@@ -1226,6 +1231,26 @@ export function PullRequestCodeTab({
               </TooltipTrigger>
               <TooltipPopup side="top">Quick open · ⌘K</TooltipPopup>
             </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant={reviewChecksOpen ? "secondary" : "ghost"}
+                    aria-label="Checks and workflow logs"
+                    aria-pressed={reviewChecksOpen}
+                    onClick={() => {
+                      setHistoryTarget(null);
+                      setReviewChecksOpen((open) => !open);
+                    }}
+                  />
+                }
+              >
+                <ListChecksIcon className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">Checks and workflow logs</TooltipPopup>
+            </Tooltip>
             <ToggleGroup
               className="shrink-0 gap-1"
               size="sm"
@@ -1545,7 +1570,14 @@ export function PullRequestCodeTab({
           </div>
           {unstructured}
         </div>
-        {historyTarget && reviewWorkspace ? (
+        {reviewChecksOpen && reviewWorkspace ? (
+          <PullRequestReviewChecksPanel
+            environmentId={reviewWorkspace.environmentId}
+            cwd={reviewWorkspace.cwd}
+            checks={detail.checks}
+            onClose={() => setReviewChecksOpen(false)}
+          />
+        ) : historyTarget && reviewWorkspace ? (
           <PullRequestLineHistoryPanel
             environmentId={reviewWorkspace.environmentId}
             cwd={reviewWorkspace.cwd}
