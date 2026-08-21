@@ -102,6 +102,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.vcsInit]: AuthOrchestrationOperateScope,
   [WS_METHODS.reviewGetDiffPreview]: AuthReviewWriteScope,
   [WS_METHODS.reviewGetDiffFileContents]: AuthReviewWriteScope,
+  [WS_METHODS.reviewGetCodeNavigation]: AuthOrchestrationReadScope,
   [WS_METHODS.reviewGetLineHistory]: AuthOrchestrationReadScope,
   [WS_METHODS.reviewGetCiLog]: AuthOrchestrationReadScope,
   [WS_METHODS.terminalOpen]: AuthTerminalOperateScope,

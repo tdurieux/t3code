@@ -52,6 +52,72 @@ export type ReviewDiffPreviewResult = typeof ReviewDiffPreviewResult.Type;
 export const ReviewDiffPreviewError = Schema.Union([VcsError, GitCommandError]);
 export type ReviewDiffPreviewError = typeof ReviewDiffPreviewError.Type;
 
+export const ReviewCodePosition = Schema.Struct({
+  path: TrimmedNonEmptyString,
+  startLine: PositiveInt,
+  endLine: Schema.optional(PositiveInt),
+  startColumn: Schema.optional(PositiveInt),
+  endColumn: Schema.optional(PositiveInt),
+});
+export type ReviewCodePosition = typeof ReviewCodePosition.Type;
+
+export const ReviewSymbolKind = Schema.Literals([
+  "function",
+  "type",
+  "variable",
+  "field",
+  "property",
+  "module",
+  "namespace",
+  "parameter",
+  "alias",
+  "unknown",
+]);
+export type ReviewSymbolKind = typeof ReviewSymbolKind.Type;
+
+export const ReviewCodeSymbol = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  fqn: TrimmedNonEmptyString,
+  kind: ReviewSymbolKind,
+  position: ReviewCodePosition,
+});
+export type ReviewCodeSymbol = typeof ReviewCodeSymbol.Type;
+
+export const ReviewCodeNavigationInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  path: TrimmedNonEmptyString,
+  line: Schema.optional(PositiveInt),
+  column: Schema.optional(PositiveInt),
+  symbol: Schema.optional(TrimmedNonEmptyString),
+});
+export type ReviewCodeNavigationInput = typeof ReviewCodeNavigationInput.Type;
+
+export const ReviewCodeNavigationResult = Schema.Struct({
+  analyzer: TrimmedNonEmptyString,
+  language: TrimmedNonEmptyString,
+  selectedSymbol: Schema.NullOr(ReviewCodeSymbol),
+  definitionCandidates: Schema.Array(ReviewCodeSymbol),
+  callers: Schema.Array(ReviewCodeSymbol),
+  callees: Schema.Array(ReviewCodeSymbol),
+  references: Schema.Array(ReviewCodePosition),
+  truncated: Schema.Boolean,
+});
+export type ReviewCodeNavigationResult = typeof ReviewCodeNavigationResult.Type;
+
+export class ReviewCodeNavigationError extends Schema.TaggedErrorClass<ReviewCodeNavigationError>()(
+  "ReviewCodeNavigationError",
+  {
+    operation: Schema.String,
+    cwd: Schema.String,
+    path: Schema.String,
+    detail: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `${this.detail} (${this.path})`;
+  }
+}
+
 export const ReviewLineHistoryInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   path: TrimmedNonEmptyString,

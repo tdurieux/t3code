@@ -79,6 +79,7 @@ import { PullRequestLineHistoryPanel } from "./PullRequestLineHistoryPanel";
 import { PullRequestFullFileView } from "./PullRequestFullFileView";
 import { PullRequestReviewChecksPanel } from "./PullRequestReviewChecksPanel";
 import { PullRequestReviewCoveragePanel } from "./PullRequestReviewCoveragePanel";
+import { PullRequestSemanticPanel } from "./PullRequestSemanticPanel";
 import {
   PullRequestReviewFileSidebar,
   PullRequestReviewQuickOpen,
@@ -100,6 +101,13 @@ import {
   selectPullRequestReviewProgress,
   usePullRequestReviewProgressStore,
 } from "./pullRequestReviewProgressStore";
+import {
+  isPullRequestReviewSymbolPinned,
+  pullRequestReviewCurrentNavigation,
+  pullRequestReviewPinnedSymbols,
+  usePullRequestReviewNavigationStore,
+} from "./pullRequestReviewNavigationStore";
+import type { PullRequestSemanticTarget } from "./pullRequestSemanticIndex.logic";
 import { PullRequestDiffStat, PullRequestMetaLine } from "./pullRequestPresentation";
 import {
   nextPendingReviewCommentId,
@@ -264,6 +272,7 @@ export function PullRequestCodeTab({
   const [reviewQuickOpen, setReviewQuickOpen] = useState(false);
   const [reviewChecksOpen, setReviewChecksOpen] = useState(false);
   const [reviewCoverageOpen, setReviewCoverageOpen] = useState(false);
+  const [semanticOpen, setSemanticOpen] = useState(false);
   const [reviewCommentsVisible, setReviewCommentsVisible] = useState(true);
   const [reviewViewMode, setReviewViewMode] = useState<"diff" | "file">("diff");
   const [selectedReviewPath, setSelectedReviewPath] = useState<string | null>(null);
@@ -307,6 +316,7 @@ export function PullRequestCodeTab({
     setReviewReveal(null);
     setReviewChecksOpen(false);
     setReviewCoverageOpen(false);
+    setSemanticOpen(false);
     setReviewCommentsVisible(true);
     parseCache.current.clear();
   }, [reviewWorkspace?.cwd, scopeKey]);
@@ -479,6 +489,17 @@ export function PullRequestCodeTab({
   const setFileReviewed = usePullRequestReviewProgressStore((store) => store.setFileReviewed);
   const setHunkVisited = usePullRequestReviewProgressStore((store) => store.setHunkVisited);
   const clearProgress = usePullRequestReviewProgressStore((store) => store.clear);
+  const navigationTrails = usePullRequestReviewNavigationStore((store) => store.trails);
+  const navigation = useMemo(
+    () => pullRequestReviewCurrentNavigation(navigationTrails, progressKey),
+    [navigationTrails, progressKey],
+  );
+  const pinnedSymbols = usePullRequestReviewNavigationStore((store) =>
+    pullRequestReviewPinnedSymbols(store.pins, progressKey),
+  );
+  const openNavigation = usePullRequestReviewNavigationStore((store) => store.open);
+  const moveNavigation = usePullRequestReviewNavigationStore((store) => store.move);
+  const togglePinnedSymbol = usePullRequestReviewNavigationStore((store) => store.togglePin);
   const reviewHunks = useMemo(() => buildPullRequestReviewHunks(files), [files]);
   const coverage = useMemo(
     () =>
@@ -1173,6 +1194,27 @@ export function PullRequestCodeTab({
     },
     [reviewFiles],
   );
+  const openSemanticTarget = useCallback(
+    (target: PullRequestSemanticTarget) => {
+      if (!progressKey) return;
+      openNavigation(progressKey, target);
+      setSelectedReviewPath(target.path);
+      setReviewReveal({ path: target.path, line: target.line, column: target.column });
+      setReviewViewMode("file");
+      setSemanticOpen(true);
+      setReviewCoverageOpen(false);
+      setReviewChecksOpen(false);
+      setHistoryTarget(null);
+    },
+    [openNavigation, progressKey],
+  );
+  useEffect(() => {
+    const target = navigation.target;
+    if (!target) return;
+    setSelectedReviewPath(target.path);
+    setReviewReveal({ path: target.path, line: target.line, column: target.column });
+    setReviewViewMode("file");
+  }, [navigation.target]);
   const openCoverageHunk = useCallback(
     (hunk: PullRequestReviewHunk) => {
       if (progressKey) setHunkVisited(progressKey, hunk.id, true);
@@ -1696,6 +1738,7 @@ export function PullRequestCodeTab({
                 cwd={reviewWorkspace.cwd}
                 path={selectedReviewPath}
                 revealLine={reviewReveal?.path === selectedReviewPath ? reviewReveal.line : null}
+                onOpenSymbol={openSemanticTarget}
               />
             ) : (
               <StyledDiffCodeView<ReviewAnnotationGroup>
@@ -1749,6 +1792,26 @@ export function PullRequestCodeTab({
             path={historyTarget.path}
             line={historyTarget.line}
             onClose={() => setHistoryTarget(null)}
+          />
+        ) : semanticOpen && navigation.target && reviewWorkspace ? (
+          <PullRequestSemanticPanel
+            environmentId={reviewWorkspace.environmentId}
+            cwd={reviewWorkspace.cwd}
+            target={navigation.target}
+            canGoBack={navigation.canBack}
+            canGoForward={navigation.canForward}
+            pinned={isPullRequestReviewSymbolPinned(pinnedSymbols, navigation.target)}
+            onNavigate={openSemanticTarget}
+            onBack={() => {
+              if (progressKey) moveNavigation(progressKey, -1);
+            }}
+            onForward={() => {
+              if (progressKey) moveNavigation(progressKey, 1);
+            }}
+            onTogglePin={() => {
+              if (progressKey) togglePinnedSymbol(progressKey, navigation.target!);
+            }}
+            onClose={() => setSemanticOpen(false)}
           />
         ) : null}
         {reviewWorkspace ? (

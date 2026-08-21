@@ -2175,6 +2175,10 @@ const makeWsRpcLayer = (
             review.getDiffFileContents(input),
             { "rpc.aggregate": "review" },
           ),
+        [WS_METHODS.reviewGetCodeNavigation]: (input) =>
+          observeRpcEffect(WS_METHODS.reviewGetCodeNavigation, review.getCodeNavigation(input), {
+            "rpc.aggregate": "review",
+          }),
         [WS_METHODS.reviewGetLineHistory]: (input) =>
           observeRpcEffect(WS_METHODS.reviewGetLineHistory, review.getLineHistory(input), {
             "rpc.aggregate": "review",

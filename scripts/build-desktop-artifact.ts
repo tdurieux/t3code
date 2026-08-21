@@ -395,6 +395,8 @@ const DesktopBuildInputArtifact = Schema.Literals([
   "desktop-resources",
   "server-dist",
   "bundled-server-client",
+  "bundled-codeapi-wasm",
+  "bundled-codeapi-module",
 ]);
 type DesktopBuildInputArtifact = typeof DesktopBuildInputArtifact.Type;
 const desktopBuildInputArtifactNames = {
@@ -402,6 +404,8 @@ const desktopBuildInputArtifactNames = {
   "desktop-resources": "desktopResources",
   "server-dist": "serverDist",
   "bundled-server-client": "bundled server client",
+  "bundled-codeapi-wasm": "bundled CodeAPI WASM",
+  "bundled-codeapi-module": "bundled CodeAPI module",
 } satisfies Record<DesktopBuildInputArtifact, string>;
 
 /**
@@ -2751,6 +2755,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     serverDist: path.join(repoRoot, "apps/server/dist"),
   };
   const bundledClientEntry = path.join(distDirs.serverDist, "client/index.html");
+  const bundledCodeApiWasm = path.join(distDirs.serverDist, "codeapi/codeapi_ir.wasm");
+  const bundledCodeApiModule = path.join(distDirs.serverDist, "codeapi/codeapi_ir.mjs");
 
   if (!options.skipBuild) {
     yield* Effect.log("[desktop-artifact] Building desktop/server/web artifacts...");
@@ -2846,6 +2852,17 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       artifactPath: bundledClientEntry,
       buildCommand: "vp run build:desktop",
     });
+  }
+  for (const input of [
+    { artifact: "bundled-codeapi-wasm", artifactPath: bundledCodeApiWasm },
+    { artifact: "bundled-codeapi-module", artifactPath: bundledCodeApiModule },
+  ] as const) {
+    if (!(yield* fs.exists(input.artifactPath))) {
+      return yield* new MissingDesktopBuildInputError({
+        ...input,
+        buildCommand: "vp run build:desktop",
+      });
+    }
   }
 
   const webAssetBrand = resolveDesktopWebAssetBrand(appVersion);

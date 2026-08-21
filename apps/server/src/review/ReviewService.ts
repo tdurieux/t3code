@@ -1,4 +1,6 @@
 import * as Context from "effect/Context";
+import * as NodeCrypto from "node:crypto";
+import * as NodeURL from "node:url";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -7,6 +9,7 @@ import * as Path from "effect/Path";
 
 import {
   ReviewLineHistoryError,
+  ReviewCodeNavigationError,
   ReviewCiLogError,
   VcsRepositoryDetectionError,
   VcsUnsupportedOperationError,
@@ -17,6 +20,9 @@ import {
   type ReviewDiffPreviewResult,
   type ReviewLineHistoryInput,
   type ReviewLineHistoryResult,
+  type ReviewCodeNavigationInput,
+  type ReviewCodeNavigationResult,
+  type ReviewCodeSymbol,
   type ReviewCiLogInput,
   type ReviewCiLogResult,
   type VcsError,
@@ -38,6 +44,63 @@ import {
   toReviewLineHistoryCommit,
 } from "./reviewLineHistory.ts";
 import { githubActionsLogArgs, parseGitHubActionsLogTarget } from "./reviewCiLog.ts";
+import {
+  WasmCodeNavigation,
+  type WasmNavigationLocation,
+  type WasmNavigationSymbol,
+  type WasmProjectFile,
+} from "./WasmCodeNavigation.ts";
+
+const MAX_CODE_NAVIGATION_RESULTS = 300;
+const MAX_CODE_NAVIGATION_FILES = 2_000;
+const MAX_CODE_NAVIGATION_SOURCE_BYTES = 32 * 1024 * 1024;
+const WASM_LANGUAGE_PATTERNS = {
+  typescript: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs"],
+  go: ["*.go"],
+  java: ["*.java"],
+  python: ["*.py"],
+  csharp: ["*.cs"],
+  c: ["*.c", "*.h", "*.h.in", "*.cc", "*.cpp", "*.cxx", "*.hh", "*.hpp"],
+  ruby: ["*.rb"],
+  rust: ["*.rs"],
+} as const;
+type WasmLanguage = keyof typeof WASM_LANGUAGE_PATTERNS;
+
+function wasmLanguageForPath(filePath: string): WasmLanguage | null {
+  const normalized = filePath.toLowerCase();
+  if (/\.(?:ts|tsx|js|jsx|mjs)$/u.test(normalized)) return "typescript";
+  if (normalized.endsWith(".go")) return "go";
+  if (normalized.endsWith(".java")) return "java";
+  if (normalized.endsWith(".py")) return "python";
+  if (normalized.endsWith(".cs")) return "csharp";
+  if (/\.(?:c|h|h\.in|cc|cpp|cxx|hh|hpp)$/u.test(normalized)) return "c";
+  if (normalized.endsWith(".rb")) return "ruby";
+  if (normalized.endsWith(".rs")) return "rust";
+  return null;
+}
+
+function reviewSymbolKind(kind: string): ReviewCodeSymbol["kind"] {
+  switch (kind.toLowerCase()) {
+    case "functiondecl":
+      return "function";
+    case "typedecl":
+      return "type";
+    case "variabledecl":
+      return "variable";
+    case "fielddecl":
+      return "field";
+    case "parameterdecl":
+      return "parameter";
+    case "namespacedecl":
+      return "namespace";
+    case "moduledecl":
+      return "module";
+    case "typealiasdecl":
+      return "alias";
+    default:
+      return "unknown";
+  }
+}
 
 export class ReviewService extends Context.Service<
   ReviewService,
@@ -48,6 +111,9 @@ export class ReviewService extends Context.Service<
     readonly getDiffFileContents: (
       input: ReviewDiffFileContentsInput,
     ) => Effect.Effect<ReviewDiffFileContentsResult, ReviewDiffPreviewError>;
+    readonly getCodeNavigation: (
+      input: ReviewCodeNavigationInput,
+    ) => Effect.Effect<ReviewCodeNavigationResult, ReviewCodeNavigationError | VcsError>;
     readonly getLineHistory: (
       input: ReviewLineHistoryInput,
     ) => Effect.Effect<ReviewLineHistoryResult, ReviewLineHistoryError | VcsError>;
@@ -64,6 +130,8 @@ export const make = Effect.gen(function* () {
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const vcsProcess = yield* VcsProcess.VcsProcess;
+  const wasmCodeNavigation = new WasmCodeNavigation();
+  const wasmProjectTruncation = new Map<string, boolean>();
 
   const canonicalizePath = (value: string) => {
     const resolvedPath = path.resolve(value);
@@ -93,6 +161,7 @@ export const make = Effect.gen(function* () {
     operation:
       | "ReviewService.getDiffPreview"
       | "ReviewService.getDiffFileContents"
+      | "ReviewService.getCodeNavigation"
       | "ReviewService.getLineHistory"
       | "ReviewService.getCiLog",
     cwd: string,
@@ -115,10 +184,269 @@ export const make = Effect.gen(function* () {
           ? "Review diff preview cwd must stay within the configured workspace root."
           : operation === "ReviewService.getDiffFileContents"
             ? "Review diff file contents cwd must stay within the configured workspace root."
-            : operation === "ReviewService.getLineHistory"
-              ? "Review line history cwd must stay within the configured workspace root."
-              : "Review CI log cwd must stay within the configured workspace root.",
+            : operation === "ReviewService.getCodeNavigation"
+              ? "Review code navigation cwd must stay within the configured workspace root."
+              : operation === "ReviewService.getLineHistory"
+                ? "Review line history cwd must stay within the configured workspace root."
+                : "Review CI log cwd must stay within the configured workspace root.",
     });
+  });
+
+  const codeNavigationError = (input: ReviewCodeNavigationInput, cwd: string, detail: string) =>
+    new ReviewCodeNavigationError({
+      operation: "ReviewService.getCodeNavigation",
+      cwd,
+      path: input.path,
+      detail,
+    });
+
+  const navigationPath = (cwd: string, filePath: string): string | null => {
+    const candidate = path.isAbsolute(filePath) ? path.relative(cwd, filePath) : filePath;
+    const normalized = path.normalize(candidate).replaceAll("\\", "/");
+    if (!normalized || normalized === ".." || normalized.startsWith("../")) return null;
+    if (normalized.split("/").some((segment) => segment === ".git" || segment === "node_modules"))
+      return null;
+    return normalized;
+  };
+
+  const getCodeNavigation: ReviewService["Service"]["getCodeNavigation"] = Effect.fn(
+    "ReviewService.getCodeNavigation",
+  )(function* (input) {
+    const cwd = yield* assertWorkspaceBoundCwd("ReviewService.getCodeNavigation", input.cwd);
+    const absoluteFile = yield* canonicalizePath(path.resolve(cwd, input.path));
+    if (!isWithinRoot(absoluteFile, cwd)) {
+      return yield* codeNavigationError(
+        input,
+        cwd,
+        "Code navigation paths must stay within the review worktree.",
+      );
+    }
+    const language = wasmLanguageForPath(input.path);
+    if (!language) {
+      return yield* codeNavigationError(
+        input,
+        cwd,
+        "The bundled CodeAPI engine does not support this file type.",
+      );
+    }
+
+    const configuredWasm = globalThis.process.env.T3_CODEAPI_IR_PATH?.trim();
+    const candidates = configuredWasm
+      ? [configuredWasm]
+      : [
+          NodeURL.fileURLToPath(new URL("./codeapi/codeapi_ir.wasm", import.meta.url)),
+          NodeURL.fileURLToPath(new URL("../../assets/codeapi/codeapi_ir.wasm", import.meta.url)),
+        ];
+    let wasmPath: string | null = null;
+    for (const candidate of candidates) {
+      const modulePath = candidate.replace(/\.wasm$/iu, ".mjs");
+      const available = yield* Effect.all(
+        [fileSystem.exists(candidate), fileSystem.exists(modulePath)],
+        {
+          concurrency: 2,
+        },
+      ).pipe(Effect.orElseSucceed(() => [false, false] as const));
+      if (available.every(Boolean)) {
+        wasmPath = candidate;
+        break;
+      }
+    }
+    if (!wasmPath) {
+      return yield* codeNavigationError(
+        input,
+        cwd,
+        "The bundled CodeAPI engine assets are unavailable.",
+      );
+    }
+
+    const revision = yield* Effect.all(
+      [
+        vcsProcess.run({
+          operation: "ReviewService.getCodeNavigation.head",
+          command: "git",
+          args: ["rev-parse", "HEAD"],
+          cwd,
+          timeoutMs: 10_000,
+          maxOutputBytes: 4_096,
+        }),
+        vcsProcess.run({
+          operation: "ReviewService.getCodeNavigation.diffIdentity",
+          command: "git",
+          args: ["diff", "--binary", "--no-ext-diff", "HEAD", "--"],
+          cwd,
+          timeoutMs: 30_000,
+          maxOutputBytes: 16 * 1024 * 1024,
+        }),
+        vcsProcess.run({
+          operation: "ReviewService.getCodeNavigation.untracked",
+          command: "git",
+          args: ["ls-files", "--others", "--exclude-standard", "-z"],
+          cwd,
+          timeoutMs: 15_000,
+          maxOutputBytes: 2 * 1024 * 1024,
+        }),
+      ],
+      { concurrency: 3 },
+    );
+    const untrackedPaths = revision[2].stdout.split("\0").filter(Boolean);
+    const boundedIdentity =
+      !revision[1].stdoutTruncated &&
+      !revision[2].stdoutTruncated &&
+      untrackedPaths.length <= MAX_CODE_NAVIGATION_FILES;
+    const untrackedHashes =
+      boundedIdentity && untrackedPaths.length > 0
+        ? yield* vcsProcess.run({
+            operation: "ReviewService.getCodeNavigation.untrackedIdentity",
+            command: "git",
+            args: ["hash-object", "--", ...untrackedPaths],
+            cwd,
+            timeoutMs: 30_000,
+            maxOutputBytes: untrackedPaths.length * 80,
+          })
+        : null;
+    const identityHash = NodeCrypto.createHash("sha256")
+      .update(revision[0].stdout)
+      .update("\0")
+      .update(revision[1].stdout)
+      .update("\0")
+      .update(revision[2].stdout);
+    if (untrackedHashes) identityHash.update("\0").update(untrackedHashes.stdout);
+    if (!boundedIdentity) {
+      identityHash.update("\0").update(String(DateTime.toEpochMillis(yield* DateTime.now)));
+    }
+    const identity = identityHash.digest("hex");
+    const projectKey = `${cwd}\0${language}\0${identity}`;
+
+    const hasProject = yield* Effect.tryPromise({
+      try: () => wasmCodeNavigation.hasProject({ wasmPath, projectKey }),
+      catch: (cause) =>
+        codeNavigationError(input, cwd, cause instanceof Error ? cause.message : String(cause)),
+    });
+    let projectTruncated = wasmProjectTruncation.get(projectKey) ?? false;
+    if (!hasProject) {
+      const listed = yield* vcsProcess.run({
+        operation: "ReviewService.getCodeNavigation.files",
+        command: "git",
+        args: [
+          "ls-files",
+          "-co",
+          "--exclude-standard",
+          "-z",
+          "--",
+          ...WASM_LANGUAGE_PATTERNS[language],
+        ],
+        cwd,
+        timeoutMs: 30_000,
+        maxOutputBytes: 16 * 1024 * 1024,
+      });
+      const allSourcePaths = [...new Set(listed.stdout.split("\0").filter(Boolean))].filter(
+        (filePath) => wasmLanguageForPath(filePath) === language,
+      );
+      projectTruncated =
+        listed.stdoutTruncated || allSourcePaths.length > MAX_CODE_NAVIGATION_FILES;
+      const sourcePaths = allSourcePaths.slice(0, MAX_CODE_NAVIGATION_FILES);
+      if (!sourcePaths.includes(input.path)) sourcePaths.push(input.path);
+      let sourceBytes = 0;
+      const files = yield* Effect.forEach(
+        sourcePaths,
+        (filePath) =>
+          fileSystem.readFileString(path.resolve(cwd, filePath)).pipe(
+            Effect.map((source): WasmProjectFile | null => {
+              sourceBytes += new TextEncoder().encode(source).byteLength;
+              if (sourceBytes > MAX_CODE_NAVIGATION_SOURCE_BYTES) {
+                projectTruncated = true;
+                return null;
+              }
+              return { path: filePath.replaceAll("\\", "/"), source };
+            }),
+            Effect.orElseSucceed(() => null),
+          ),
+        { concurrency: 1 },
+      );
+      const readable = files.filter((file): file is WasmProjectFile => file !== null);
+      if (readable.length === 0) {
+        return yield* codeNavigationError(
+          input,
+          cwd,
+          `No readable ${language} source files were found.`,
+        );
+      }
+      yield* Effect.tryPromise({
+        try: () => wasmCodeNavigation.build({ wasmPath, projectKey, files: readable, language }),
+        catch: (cause) =>
+          codeNavigationError(input, cwd, cause instanceof Error ? cause.message : String(cause)),
+      });
+      wasmProjectTruncation.set(projectKey, projectTruncated);
+      if (wasmProjectTruncation.size > 12) {
+        const oldest = wasmProjectTruncation.keys().next().value;
+        if (oldest) wasmProjectTruncation.delete(oldest);
+      }
+    }
+
+    const query = yield* Effect.tryPromise({
+      try: () =>
+        wasmCodeNavigation.query({
+          wasmPath,
+          projectKey,
+          path: input.path.replaceAll("\\", "/"),
+          line: input.line ?? 1,
+          column: input.column ?? 1,
+          ...(input.symbol ? { symbol: input.symbol } : {}),
+        }),
+      catch: (cause) =>
+        codeNavigationError(input, cwd, cause instanceof Error ? cause.message : String(cause)),
+    });
+    const position = (location: WasmNavigationLocation | null) => {
+      if (!location) return null;
+      const relativePath = navigationPath(cwd, location.filePath);
+      if (!relativePath) return null;
+      return {
+        path: relativePath,
+        startLine: Math.max(1, Math.floor(location.startLine)),
+        endLine: Math.max(1, Math.floor(location.endLine)),
+        startColumn: Math.max(1, Math.floor(location.startColumn)),
+        endColumn: Math.max(1, Math.floor(location.endColumn)),
+      };
+    };
+    const symbol = (value: WasmNavigationSymbol): ReviewCodeSymbol | null => {
+      const location = position(value.location);
+      return location && value.name.trim() && value.fqName.trim()
+        ? {
+            name: value.name,
+            fqn: value.fqName,
+            kind: reviewSymbolKind(value.kind),
+            position: location,
+          }
+        : null;
+    };
+    const symbols = (values: ReadonlyArray<WasmNavigationSymbol>) =>
+      values
+        .flatMap((value) => {
+          const normalized = symbol(value);
+          return normalized ? [normalized] : [];
+        })
+        .slice(0, MAX_CODE_NAVIGATION_RESULTS);
+    const references = query.references
+      .flatMap((value) => {
+        const normalized = position(value.location);
+        return normalized ? [normalized] : [];
+      })
+      .slice(0, MAX_CODE_NAVIGATION_RESULTS);
+    return {
+      analyzer: "bundled-codeapi-wasm",
+      language,
+      selectedSymbol: query.symbol ? symbol(query.symbol) : null,
+      definitionCandidates: symbols(query.definitionCandidates),
+      callers: symbols(query.callers),
+      callees: symbols(query.callees),
+      references,
+      truncated:
+        projectTruncated ||
+        query.definitionCandidates.length > MAX_CODE_NAVIGATION_RESULTS ||
+        query.callers.length > MAX_CODE_NAVIGATION_RESULTS ||
+        query.callees.length > MAX_CODE_NAVIGATION_RESULTS ||
+        query.references.length > MAX_CODE_NAVIGATION_RESULTS,
+    };
   });
 
   const getCiLog: ReviewService["Service"]["getCiLog"] = Effect.fn("ReviewService.getCiLog")(
@@ -399,6 +727,7 @@ export const make = Effect.gen(function* () {
   return ReviewService.of({
     getDiffPreview,
     getDiffFileContents,
+    getCodeNavigation,
     getLineHistory,
     getCiLog,
   });

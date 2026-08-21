@@ -61,6 +61,9 @@ import {
   ReviewCiLogError,
   ReviewCiLogInput,
   ReviewCiLogResult,
+  ReviewCodeNavigationError,
+  ReviewCodeNavigationInput,
+  ReviewCodeNavigationResult,
   ReviewLineHistoryError,
   ReviewLineHistoryInput,
   ReviewLineHistoryResult,
@@ -253,6 +256,7 @@ export const WS_METHODS = {
   // Review methods
   reviewGetDiffPreview: "review.getDiffPreview",
   reviewGetDiffFileContents: "review.getDiffFileContents",
+  reviewGetCodeNavigation: "review.getCodeNavigation",
   reviewGetLineHistory: "review.getLineHistory",
   reviewGetCiLog: "review.getCiLog",
 
@@ -797,6 +801,12 @@ export const WsReviewGetDiffFileContentsRpc = Rpc.make(WS_METHODS.reviewGetDiffF
   error: Schema.Union([ReviewDiffPreviewError, EnvironmentAuthorizationError]),
 });
 
+export const WsReviewGetCodeNavigationRpc = Rpc.make(WS_METHODS.reviewGetCodeNavigation, {
+  payload: ReviewCodeNavigationInput,
+  success: ReviewCodeNavigationResult,
+  error: Schema.Union([ReviewCodeNavigationError, VcsError, EnvironmentAuthorizationError]),
+});
+
 export const WsReviewGetLineHistoryRpc = Rpc.make(WS_METHODS.reviewGetLineHistory, {
   payload: ReviewLineHistoryInput,
   success: ReviewLineHistoryResult,
@@ -1106,6 +1116,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsInitRpc,
   WsReviewGetDiffPreviewRpc,
   WsReviewGetDiffFileContentsRpc,
+  WsReviewGetCodeNavigationRpc,
   WsReviewGetLineHistoryRpc,
   WsReviewGetCiLogRpc,
   WsTerminalOpenRpc,

@@ -37,6 +37,11 @@ export function createReviewEnvironmentAtoms<R, E>(
           ]),
       },
     }),
+    codeNavigation: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:review:code-navigation",
+      tag: WS_METHODS.reviewGetCodeNavigation,
+      staleTimeMs: 30_000,
+    }),
     lineHistory: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:review:line-history",
       tag: WS_METHODS.reviewGetLineHistory,
