@@ -122,6 +122,7 @@ export const ReviewLineHistoryInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   path: TrimmedNonEmptyString,
   line: PositiveInt,
+  baseRef: Schema.optionalKey(TrimmedNonEmptyString),
   /** Host revision token used to keep immutable line-history cache entries distinct. */
   revision: Schema.optionalKey(TrimmedNonEmptyString),
 });
@@ -195,6 +196,37 @@ export const ReviewLineRisk = Schema.Struct({
 });
 export type ReviewLineRisk = typeof ReviewLineRisk.Type;
 
+export const ReviewCodeownersMetadata = Schema.Struct({
+  sourcePath: TrimmedNonEmptyString,
+  ruleCount: NonNegativeInt,
+  truncated: Schema.Boolean,
+});
+export type ReviewCodeownersMetadata = typeof ReviewCodeownersMetadata.Type;
+
+export const ReviewCodeownersOwnership = Schema.Struct({
+  sourcePath: TrimmedNonEmptyString,
+  sourceLine: PositiveInt,
+  pattern: TrimmedNonEmptyString,
+  owners: Schema.Array(TrimmedNonEmptyString),
+});
+export type ReviewCodeownersOwnership = typeof ReviewCodeownersOwnership.Type;
+
+export const ReviewOwnershipDriftKind = Schema.Literals([
+  "ownership-added",
+  "ownership-removed",
+  "owners-changed",
+  "rule-changed",
+]);
+export type ReviewOwnershipDriftKind = typeof ReviewOwnershipDriftKind.Type;
+
+export const ReviewOwnershipDriftEntry = Schema.Struct({
+  path: TrimmedNonEmptyString,
+  kind: ReviewOwnershipDriftKind,
+  baseOwnership: Schema.NullOr(ReviewCodeownersOwnership),
+  worktreeOwnership: Schema.NullOr(ReviewCodeownersOwnership),
+});
+export type ReviewOwnershipDriftEntry = typeof ReviewOwnershipDriftEntry.Type;
+
 export const ReviewLineHistoryResult = Schema.Struct({
   path: TrimmedNonEmptyString,
   line: PositiveInt,
@@ -207,6 +239,8 @@ export const ReviewLineHistoryResult = Schema.Struct({
   ownership: Schema.Array(ReviewLineOwnershipSegment),
   reviewerSuggestions: Schema.Array(ReviewLineReviewerSuggestion),
   risk: ReviewLineRisk,
+  codeowners: Schema.NullOr(ReviewCodeownersOwnership),
+  ownershipDrift: Schema.NullOr(ReviewOwnershipDriftEntry),
   truncated: Schema.Boolean,
 });
 export type ReviewLineHistoryResult = typeof ReviewLineHistoryResult.Type;

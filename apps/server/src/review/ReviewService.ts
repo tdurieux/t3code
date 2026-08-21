@@ -45,6 +45,15 @@ import {
 } from "./reviewLineHistory.ts";
 import { githubActionsLogArgs, parseGitHubActionsLogTarget } from "./reviewCiLog.ts";
 import {
+  compareReviewCodeowners,
+  loadReviewCodeowners,
+  MAX_REVIEW_CODEOWNERS_BYTES,
+  parseReviewCodeowners,
+  REVIEW_CODEOWNERS_PATHS,
+  reviewCodeownersOwnership,
+  type ReviewCodeownersFile,
+} from "./reviewCodeowners.ts";
+import {
   WasmCodeNavigation,
   type WasmNavigationLocation,
   type WasmNavigationSymbol,
@@ -208,6 +217,73 @@ export const make = Effect.gen(function* () {
       return null;
     return normalized;
   };
+
+  const loadCodeownersAtRevision = Effect.fn("ReviewService.loadCodeownersAtRevision")(function* (
+    cwd: string,
+    revision: string,
+  ): Effect.fn.Return<ReviewCodeownersFile | null> {
+    for (const sourcePath of REVIEW_CODEOWNERS_PATHS) {
+      const output = yield* vcsProcess
+        .run({
+          operation: "ReviewService.loadCodeownersAtRevision",
+          command: "git",
+          args: [
+            "show",
+            "--no-textconv",
+            "--format=",
+            "--end-of-options",
+            `${revision}:${sourcePath}`,
+          ],
+          cwd,
+          allowNonZeroExit: true,
+          timeoutMs: 10_000,
+          maxOutputBytes: MAX_REVIEW_CODEOWNERS_BYTES + 1,
+        })
+        .pipe(Effect.orElseSucceed(() => null));
+      if (!output || output.exitCode !== 0) continue;
+      if (output.stdoutTruncated || output.stdout.length > MAX_REVIEW_CODEOWNERS_BYTES) {
+        return {
+          metadata: { sourcePath, ruleCount: 0, truncated: true },
+          rules: [],
+        };
+      }
+      return parseReviewCodeowners(output.stdout, sourcePath);
+    }
+    return null;
+  });
+
+  const loadLineOwnership = Effect.fn("ReviewService.loadLineOwnership")(function* (
+    cwd: string,
+    baseRef: string | undefined,
+  ) {
+    const worktree = yield* loadReviewCodeowners(cwd).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+    );
+    if (!baseRef) return { worktree, base: undefined };
+
+    let baseSha: string | null = null;
+    for (const candidate of [baseRef, `origin/${baseRef}`]) {
+      const mergeBase = yield* vcsProcess
+        .run({
+          operation: "ReviewService.loadLineOwnership.mergeBase",
+          command: "git",
+          args: ["merge-base", "--", candidate, "HEAD"],
+          cwd,
+          allowNonZeroExit: true,
+          timeoutMs: 10_000,
+          maxOutputBytes: 4_096,
+        })
+        .pipe(Effect.orElseSucceed(() => null));
+      const resolved = mergeBase?.exitCode === 0 ? mergeBase.stdout.trim() : "";
+      if (resolved) {
+        baseSha = resolved;
+        break;
+      }
+    }
+    if (!baseSha) return { worktree, base: undefined };
+    return { worktree, base: yield* loadCodeownersAtRevision(cwd, baseSha) };
+  });
 
   const getCodeNavigation: ReviewService["Service"]["getCodeNavigation"] = Effect.fn(
     "ReviewService.getCodeNavigation",
@@ -534,62 +610,64 @@ export const make = Effect.gen(function* () {
 
     const contextStart = Math.max(1, input.line - 24);
     const contextEnd = Math.min(fileLines.length, input.line + 24);
-    const [headOutput, blameOutput, historyOutput, remoteOutput] = yield* Effect.all(
-      [
-        vcsProcess.run({
-          operation: `${operation}.head`,
-          command: "git",
-          args: ["rev-parse", "HEAD"],
-          cwd: canonicalCwd,
-          timeoutMs: 10_000,
-          maxOutputBytes: 4_096,
-        }),
-        vcsProcess.run({
-          operation: `${operation}.blame`,
-          command: "git",
-          args: [
-            "blame",
-            "--line-porcelain",
-            "--date=unix",
-            "-L",
-            `${contextStart},${contextEnd}`,
-            "--",
-            input.path,
-          ],
-          cwd: canonicalCwd,
-          allowNonZeroExit: true,
-          timeoutMs: 20_000,
-          maxOutputBytes: 1_000_000,
-        }),
-        vcsProcess.run({
-          operation: `${operation}.history`,
-          command: "git",
-          args: [
-            "log",
-            "-n",
-            "12",
-            "--no-patch",
-            `--format=${REVIEW_LINE_HISTORY_FORMAT}`,
-            "-L",
-            `${input.line},${input.line}:${input.path}`,
-          ],
-          cwd: canonicalCwd,
-          allowNonZeroExit: true,
-          timeoutMs: 20_000,
-          maxOutputBytes: 1_000_000,
-        }),
-        vcsProcess.run({
-          operation: `${operation}.remote`,
-          command: "git",
-          args: ["remote", "get-url", "origin"],
-          cwd: canonicalCwd,
-          allowNonZeroExit: true,
-          timeoutMs: 10_000,
-          maxOutputBytes: 16_384,
-        }),
-      ],
-      { concurrency: 4 },
-    );
+    const [headOutput, blameOutput, historyOutput, remoteOutput, declaredOwnership] =
+      yield* Effect.all(
+        [
+          vcsProcess.run({
+            operation: `${operation}.head`,
+            command: "git",
+            args: ["rev-parse", "HEAD"],
+            cwd: canonicalCwd,
+            timeoutMs: 10_000,
+            maxOutputBytes: 4_096,
+          }),
+          vcsProcess.run({
+            operation: `${operation}.blame`,
+            command: "git",
+            args: [
+              "blame",
+              "--line-porcelain",
+              "--date=unix",
+              "-L",
+              `${contextStart},${contextEnd}`,
+              "--",
+              input.path,
+            ],
+            cwd: canonicalCwd,
+            allowNonZeroExit: true,
+            timeoutMs: 20_000,
+            maxOutputBytes: 1_000_000,
+          }),
+          vcsProcess.run({
+            operation: `${operation}.history`,
+            command: "git",
+            args: [
+              "log",
+              "-n",
+              "12",
+              "--no-patch",
+              `--format=${REVIEW_LINE_HISTORY_FORMAT}`,
+              "-L",
+              `${input.line},${input.line}:${input.path}`,
+            ],
+            cwd: canonicalCwd,
+            allowNonZeroExit: true,
+            timeoutMs: 20_000,
+            maxOutputBytes: 1_000_000,
+          }),
+          vcsProcess.run({
+            operation: `${operation}.remote`,
+            command: "git",
+            args: ["remote", "get-url", "origin"],
+            cwd: canonicalCwd,
+            allowNonZeroExit: true,
+            timeoutMs: 10_000,
+            maxOutputBytes: 16_384,
+          }),
+          loadLineOwnership(canonicalCwd, input.baseRef),
+        ],
+        { concurrency: 5 },
+      );
     if (blameOutput.exitCode !== 0) {
       return yield* new ReviewLineHistoryError({
         operation,
@@ -657,6 +735,20 @@ export const make = Effect.gen(function* () {
       { concurrency: 4 },
     )).filter((version) => version !== null);
     const now = yield* DateTime.now;
+    const codeowners =
+      declaredOwnership.worktree?.metadata.truncated === true
+        ? null
+        : reviewCodeownersOwnership(input.path, declaredOwnership.worktree);
+    const ownershipDrift =
+      declaredOwnership.base === undefined ||
+      declaredOwnership.base?.metadata.truncated === true ||
+      declaredOwnership.worktree?.metadata.truncated === true
+        ? null
+        : (compareReviewCodeowners({
+            paths: [input.path],
+            base: declaredOwnership.base,
+            worktree: declaredOwnership.worktree,
+          }).entries[0] ?? null);
     return {
       path: input.path,
       line: input.line,
@@ -673,6 +765,8 @@ export const make = Effect.gen(function* () {
         history,
         now,
       }),
+      codeowners,
+      ownershipDrift,
       truncated:
         blameOutput.stdoutTruncated || historyOutput.stdoutTruncated || history.length === 12,
     } satisfies ReviewLineHistoryResult;

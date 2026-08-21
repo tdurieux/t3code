@@ -65,6 +65,28 @@ const result: ReviewLineHistoryResult = {
     revertCount: 0,
     signals: ["The current line was introduced 12 days ago."],
   },
+  codeowners: {
+    sourcePath: ".github/CODEOWNERS",
+    sourceLine: 7,
+    pattern: "/src/",
+    owners: ["@web-team"],
+  },
+  ownershipDrift: {
+    path: "src/usage.ts",
+    kind: "owners-changed",
+    baseOwnership: {
+      sourcePath: ".github/CODEOWNERS",
+      sourceLine: 6,
+      pattern: "/src/",
+      owners: ["@platform"],
+    },
+    worktreeOwnership: {
+      sourcePath: ".github/CODEOWNERS",
+      sourceLine: 7,
+      pattern: "/src/",
+      owners: ["@web-team"],
+    },
+  },
   truncated: false,
 };
 
@@ -77,6 +99,10 @@ describe("PullRequestLineHistoryContent", () => {
     expect(markup).toContain("PR #42");
     expect(markup).toContain("Recently introduced");
     expect(markup).toContain("Suggested reviewers");
+    expect(markup).toContain("Declared code owners");
+    expect(markup).toContain("@web-team");
+    expect(markup).toContain("Ownership changed from the base branch");
+    expect(markup).toContain("@platform");
     expect(markup).toContain("Previous versions");
     expect(markup).toContain("const pending = true;");
     expect(markup).toContain('data-commit-date="2026-07-01T00:00:00.000Z"');

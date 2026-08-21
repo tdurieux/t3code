@@ -3,6 +3,7 @@ import type {
   ProjectContentMatch,
   ReviewCodePosition,
   ReviewCodeSymbol,
+  ReviewLineOwnershipSegment,
 } from "@t3tools/contracts";
 import {
   ArrowLeftIcon,
@@ -24,7 +25,9 @@ import { reviewEnvironment } from "~/state/review";
 
 import { useProjectFileQuery } from "../files/projectFilesQueryState";
 import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
 import { Spinner } from "../ui/spinner";
+import { groupPullRequestOwnership, pullRequestOwnershipKey } from "./pullRequestLineHistory.logic";
 import {
   buildPullRequestSemanticRelations,
   pullRequestSemanticExcerpt,
@@ -32,6 +35,13 @@ import {
 } from "./pullRequestSemanticIndex.logic";
 
 type Relation = "definitions" | "references" | "callers" | "callees" | "usages";
+const OWNERSHIP_GUTTER_COLORS = [
+  "bg-sky-500",
+  "bg-violet-500",
+  "bg-emerald-500",
+  "bg-amber-500",
+  "bg-rose-500",
+] as const;
 
 interface SemanticLocation {
   readonly path: string;
@@ -115,6 +125,8 @@ function LocationButton({
 export function PullRequestSemanticPanel({
   environmentId,
   cwd,
+  revision,
+  baseRef,
   target,
   canGoBack,
   canGoForward,
@@ -127,6 +139,8 @@ export function PullRequestSemanticPanel({
 }: {
   readonly environmentId: EnvironmentId;
   readonly cwd: string;
+  readonly revision: string;
+  readonly baseRef?: string;
   readonly target: PullRequestSemanticTarget;
   readonly canGoBack: boolean;
   readonly canGoForward: boolean;
@@ -148,6 +162,18 @@ export function PullRequestSemanticPanel({
         line: target.line,
         column: target.column,
         symbol: target.symbol,
+      },
+    }),
+  );
+  const lineHistory = useEnvironmentQuery(
+    reviewEnvironment.lineHistory({
+      environmentId,
+      input: {
+        cwd,
+        path: target.path,
+        line: target.line,
+        revision,
+        ...(baseRef ? { baseRef } : {}),
       },
     }),
   );
@@ -221,6 +247,13 @@ export function PullRequestSemanticPanel({
     [relations],
   );
   const selectedName = indexed?.selectedSymbol?.name ?? target.symbol;
+  const ownershipGroups = groupPullRequestOwnership(lineHistory.data?.ownership ?? []);
+  const ownershipGroupByKey = new Map(ownershipGroups.map((group) => [group.key, group]));
+  const ownershipAtLine = (line: number): ReviewLineOwnershipSegment | null =>
+    lineHistory.data?.ownership.find(
+      (segment) => line >= segment.startLine && line <= segment.endLine,
+    ) ?? null;
+  const selectedOwnership = ownershipAtLine(target.line);
 
   return (
     <aside className="flex min-h-0 w-96 shrink-0 flex-col border-l border-border/60 bg-background">
@@ -265,6 +298,10 @@ export function PullRequestSemanticPanel({
         </div>
         <div className="mt-3 overflow-hidden rounded-md border border-border/60 bg-muted/15 font-mono text-[10px]">
           {excerpt.map((line) => {
+            const ownership = ownershipAtLine(line.number);
+            const ownershipGroup = ownership
+              ? ownershipGroupByKey.get(pullRequestOwnershipKey(ownership))
+              : undefined;
             const match: ProjectContentMatch = {
               path: target.path,
               lineNumber: line.number,
@@ -287,6 +324,18 @@ export function PullRequestSemanticPanel({
                   line.highlighted && "bg-violet-500/10 text-foreground",
                 )}
               >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "w-1 shrink-0",
+                    ownership
+                      ? OWNERSHIP_GUTTER_COLORS[
+                          (ownershipGroup?.colorIndex ?? 0) % OWNERSHIP_GUTTER_COLORS.length
+                        ]
+                      : "bg-transparent",
+                  )}
+                  data-ownership-author={ownership?.author.name}
+                />
                 <span className="w-10 shrink-0 select-none border-r border-border/45 pr-2 text-right text-muted-foreground">
                   {line.number}
                 </span>
@@ -308,6 +357,25 @@ export function PullRequestSemanticPanel({
             <span>Workspace search fallback</span>
           ) : null}
         </div>
+        {selectedOwnership || lineHistory.data?.codeowners ? (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {selectedOwnership ? (
+              <span className="text-[9px] text-muted-foreground">
+                Last changed by {selectedOwnership.author.name}
+              </span>
+            ) : null}
+            {lineHistory.data?.codeowners?.owners.map((owner) => (
+              <Badge key={owner} variant="outline" className="font-mono text-[8px]">
+                {owner}
+              </Badge>
+            ))}
+            {lineHistory.data?.ownershipDrift ? (
+              <Badge className="border-amber-500/35 bg-amber-500/10 text-[8px] text-amber-700 dark:text-amber-300">
+                Ownership drift
+              </Badge>
+            ) : null}
+          </div>
+        ) : null}
         <div className="mt-3 flex flex-wrap gap-1">
           {(Object.keys(counts) as ReadonlyArray<Relation>).map((key) => (
             <Button

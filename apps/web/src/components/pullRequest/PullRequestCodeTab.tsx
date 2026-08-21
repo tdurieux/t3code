@@ -1789,6 +1789,7 @@ export function PullRequestCodeTab({
             environmentId={reviewWorkspace.environmentId}
             cwd={reviewWorkspace.cwd}
             revision={reviewWorkspace.revision}
+            baseRef={detail.baseBranch}
             path={historyTarget.path}
             line={historyTarget.line}
             onClose={() => setHistoryTarget(null)}
@@ -1797,6 +1798,8 @@ export function PullRequestCodeTab({
           <PullRequestSemanticPanel
             environmentId={reviewWorkspace.environmentId}
             cwd={reviewWorkspace.cwd}
+            revision={reviewWorkspace.revision}
+            baseRef={detail.baseBranch}
             target={navigation.target}
             canGoBack={navigation.canBack}
             canGoForward={navigation.canForward}

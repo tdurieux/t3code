@@ -8,11 +8,13 @@ import {
   ActivityIcon,
   Clock3Icon,
   ExternalLinkIcon,
+  GitCompareArrowsIcon,
   GitCommitHorizontalIcon,
   HistoryIcon,
   RotateCcwIcon,
   ShieldAlertIcon,
   UsersIcon,
+  UserRoundCheckIcon,
   XIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -272,6 +274,49 @@ export function PullRequestLineHistoryContent({
         )}
       </section>
 
+      <section className="p-4">
+        <div className="flex items-center gap-2">
+          <UserRoundCheckIcon className="size-3.5 text-sky-500" />
+          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Declared code owners
+          </h3>
+        </div>
+        {result.codeowners ? (
+          <>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {result.codeowners.owners.map((owner) => (
+                <Badge key={owner} variant="outline" className="font-mono text-[9px]">
+                  {owner}
+                </Badge>
+              ))}
+            </div>
+            <p className="mt-2 truncate font-mono text-[9px] text-muted-foreground">
+              {result.codeowners.sourcePath}:{result.codeowners.sourceLine} ·{" "}
+              {result.codeowners.pattern}
+            </p>
+          </>
+        ) : (
+          <p className="mt-2 text-[10px] text-muted-foreground">
+            No CODEOWNERS rule matches this file.
+          </p>
+        )}
+        {result.ownershipDrift ? (
+          <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/8 p-2.5">
+            <div className="flex items-center gap-1.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+              <GitCompareArrowsIcon className="size-3.5" />
+              Ownership changed from the base branch
+            </div>
+            <p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">
+              {(result.ownershipDrift.baseOwnership?.owners ?? ["No declared owner"]).join(", ")}
+              {" → "}
+              {(result.ownershipDrift.worktreeOwnership?.owners ?? ["No declared owner"]).join(
+                ", ",
+              )}
+            </p>
+          </div>
+        ) : null}
+      </section>
+
       {result.reviewerSuggestions.length > 0 ? (
         <section className="p-4">
           <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -367,6 +412,7 @@ export function PullRequestLineHistoryPanel({
   environmentId,
   cwd,
   revision,
+  baseRef,
   path,
   line,
   onClose,
@@ -374,6 +420,7 @@ export function PullRequestLineHistoryPanel({
   readonly environmentId: EnvironmentId;
   readonly cwd: string;
   readonly revision: string;
+  readonly baseRef?: string;
   readonly path: string;
   readonly line: number;
   readonly onClose: () => void;
@@ -381,7 +428,7 @@ export function PullRequestLineHistoryPanel({
   const query = useEnvironmentQuery(
     reviewEnvironment.lineHistory({
       environmentId,
-      input: { cwd, path, line, revision },
+      input: { cwd, path, line, revision, ...(baseRef ? { baseRef } : {}) },
     }),
   );
 
