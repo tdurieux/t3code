@@ -1,5 +1,12 @@
 import type { EnvironmentId, ProjectContentMatch } from "@t3tools/contracts";
-import { BracesIcon, FileCode2Icon, SearchIcon, TextSearchIcon } from "lucide-react";
+import {
+  BracesIcon,
+  CheckCircle2Icon,
+  CircleIcon,
+  FileCode2Icon,
+  SearchIcon,
+  TextSearchIcon,
+} from "lucide-react";
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
@@ -35,6 +42,9 @@ export interface PullRequestReviewFileEntry {
   readonly path: string;
   readonly additions: number;
   readonly deletions: number;
+  readonly reviewed?: boolean;
+  readonly visitedHunks?: number;
+  readonly totalHunks?: number;
 }
 
 function pathParts(path: string) {
@@ -58,11 +68,13 @@ export function PullRequestReviewFileSidebar({
   selectedPath,
   onSelect,
   onOpenQuickOpen,
+  onSetReviewed,
 }: {
   readonly files: ReadonlyArray<PullRequestReviewFileEntry>;
   readonly selectedPath: string | null;
   readonly onSelect: (path: string) => void;
   readonly onOpenQuickOpen: () => void;
+  readonly onSetReviewed?: (path: string, reviewed: boolean) => void;
 }) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -133,12 +145,45 @@ export function PullRequestReviewFileSidebar({
                 copyPath(file.path, file.path);
               }}
             >
-              <FileCode2Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+              {onSetReviewed ? (
+                <span
+                  role="checkbox"
+                  aria-label={
+                    file.reviewed ? `Mark ${file.path} unreviewed` : `Mark ${file.path} reviewed`
+                  }
+                  aria-checked={file.reviewed === true}
+                  tabIndex={0}
+                  className="mt-0.5 shrink-0 rounded text-muted-foreground hover:text-foreground"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSetReviewed(file.path, file.reviewed !== true);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onSetReviewed(file.path, file.reviewed !== true);
+                  }}
+                >
+                  {file.reviewed ? (
+                    <CheckCircle2Icon className="size-3.5 text-emerald-500" />
+                  ) : (
+                    <CircleIcon className="size-3.5" />
+                  )}
+                </span>
+              ) : (
+                <FileCode2Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+              )}
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{label.name}</span>
                 {label.parent ? (
                   <span className="block truncate text-[10px] text-muted-foreground">
                     {label.parent}
+                  </span>
+                ) : null}
+                {file.totalHunks ? (
+                  <span className="block text-[9px] tabular-nums text-muted-foreground">
+                    {file.visitedHunks ?? 0}/{file.totalHunks} hunks
                   </span>
                 ) : null}
               </span>

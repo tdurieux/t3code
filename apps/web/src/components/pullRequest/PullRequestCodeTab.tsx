@@ -20,6 +20,7 @@ import {
   MessageSquareIcon,
   MessageSquareOffIcon,
   HistoryIcon,
+  EyeIcon,
   ListChecksIcon,
   Rows3Icon,
   SearchIcon,
@@ -77,6 +78,7 @@ import { PullRequestReviewBar } from "./PullRequestReviewBar";
 import { PullRequestLineHistoryPanel } from "./PullRequestLineHistoryPanel";
 import { PullRequestFullFileView } from "./PullRequestFullFileView";
 import { PullRequestReviewChecksPanel } from "./PullRequestReviewChecksPanel";
+import { PullRequestReviewCoveragePanel } from "./PullRequestReviewCoveragePanel";
 import {
   PullRequestReviewFileSidebar,
   PullRequestReviewQuickOpen,
@@ -87,6 +89,17 @@ import {
   isLineInFileDiff,
   type DiffFoldOverride,
 } from "./pullRequestDiff.logic";
+import {
+  buildPullRequestReviewCoverage,
+  buildPullRequestReviewHunks,
+  findPullRequestReviewHunk,
+  pullRequestReviewProgressKey,
+  type PullRequestReviewHunk,
+} from "./pullRequestReviewProgress.logic";
+import {
+  selectPullRequestReviewProgress,
+  usePullRequestReviewProgressStore,
+} from "./pullRequestReviewProgressStore";
 import { PullRequestDiffStat, PullRequestMetaLine } from "./pullRequestPresentation";
 import {
   nextPendingReviewCommentId,
@@ -250,6 +263,7 @@ export function PullRequestCodeTab({
   } | null>(null);
   const [reviewQuickOpen, setReviewQuickOpen] = useState(false);
   const [reviewChecksOpen, setReviewChecksOpen] = useState(false);
+  const [reviewCoverageOpen, setReviewCoverageOpen] = useState(false);
   const [reviewCommentsVisible, setReviewCommentsVisible] = useState(true);
   const [reviewViewMode, setReviewViewMode] = useState<"diff" | "file">("diff");
   const [selectedReviewPath, setSelectedReviewPath] = useState<string | null>(null);
@@ -292,6 +306,7 @@ export function PullRequestCodeTab({
     setReviewViewMode("diff");
     setReviewReveal(null);
     setReviewChecksOpen(false);
+    setReviewCoverageOpen(false);
     setReviewCommentsVisible(true);
     parseCache.current.clear();
   }, [reviewWorkspace?.cwd, scopeKey]);
@@ -451,15 +466,53 @@ export function PullRequestCodeTab({
       ),
     [parsedSlices],
   );
-  const reviewFiles = useMemo<ReadonlyArray<PullRequestReviewFileEntry>>(
+  const progressKey = reviewWorkspace
+    ? pullRequestReviewProgressKey({
+        environmentId: reviewWorkspace.environmentId,
+        pullRequestKey: referenceKey,
+        revision: reviewWorkspace.revision,
+      })
+    : null;
+  const progress = usePullRequestReviewProgressStore((store) =>
+    selectPullRequestReviewProgress(store.byReviewKey, progressKey),
+  );
+  const setFileReviewed = usePullRequestReviewProgressStore((store) => store.setFileReviewed);
+  const setHunkVisited = usePullRequestReviewProgressStore((store) => store.setHunkVisited);
+  const clearProgress = usePullRequestReviewProgressStore((store) => store.clear);
+  const reviewHunks = useMemo(() => buildPullRequestReviewHunks(files), [files]);
+  const coverage = useMemo(
     () =>
-      files.map((file) => ({
-        path: resolveFileDiffPath(file),
+      buildPullRequestReviewCoverage({
+        hunks: reviewHunks,
+        filePaths: files.map(resolveFileDiffPath),
+        visitedHunkIds: new Set(progress.visitedHunks),
+        reviewedFilePaths: new Set(progress.reviewedFiles),
+      }),
+    [files, progress.reviewedFiles, progress.visitedHunks, reviewHunks],
+  );
+  const reviewFiles = useMemo<ReadonlyArray<PullRequestReviewFileEntry>>(() => {
+    const hunksByPath = new Map<string, { visited: number; total: number }>();
+    for (const hunk of coverage.hunks) {
+      const current = hunksByPath.get(hunk.path) ?? { visited: 0, total: 0 };
+      hunksByPath.set(hunk.path, {
+        visited: current.visited + (hunk.visited ? 1 : 0),
+        total: current.total + 1,
+      });
+    }
+    const reviewed = new Set(progress.reviewedFiles);
+    return files.map((file) => {
+      const path = resolveFileDiffPath(file);
+      const hunkProgress = hunksByPath.get(path);
+      return {
+        path,
         additions: file.additionLines.length,
         deletions: file.deletionLines.length,
-      })),
-    [files],
-  );
+        reviewed: reviewed.has(path),
+        visitedHunks: hunkProgress?.visited ?? 0,
+        totalHunks: hunkProgress?.total ?? 0,
+      };
+    });
+  }, [coverage.hunks, files, progress.reviewedFiles]);
   useEffect(() => {
     if (reviewWorkspace === undefined || selectedReviewPath !== null) return;
     const first = reviewFiles[0];
@@ -710,6 +763,13 @@ export function PullRequestCodeTab({
       const previousPath = resolveFileDiffPreviousPath(file);
       const position = resolveDiffReviewPosition(file, range.end, range.endSide ?? range.side);
       if (position === null) return;
+      const anchor = getReviewPositionAnchor(position);
+      const visitedHunk = findPullRequestReviewHunk(reviewHunks, {
+        path,
+        line: anchor.line,
+        side: anchor.side,
+      });
+      if (progressKey && visitedHunk) setHunkVisited(progressKey, visitedHunk.id, true);
       if (canInspectLineHistory) {
         setReviewChecksOpen(false);
         if (position.kind === "deleted") {
@@ -735,7 +795,15 @@ export function PullRequestCodeTab({
         range,
       });
     },
-    [canCommentOnLines, canInspectLineHistory, canSelectLines, files],
+    [
+      canCommentOnLines,
+      canInspectLineHistory,
+      canSelectLines,
+      files,
+      progressKey,
+      reviewHunks,
+      setHunkVisited,
+    ],
   );
 
   // Built here because the parsed diff only lives here, and built by the same function the
@@ -1105,6 +1173,22 @@ export function PullRequestCodeTab({
     },
     [reviewFiles],
   );
+  const openCoverageHunk = useCallback(
+    (hunk: PullRequestReviewHunk) => {
+      if (progressKey) setHunkVisited(progressKey, hunk.id, true);
+      setSelectedReviewPath(hunk.path);
+      setReviewViewMode("diff");
+      setReviewChecksOpen(false);
+      setHistoryTarget(null);
+      const file = files.find((candidate) => resolveFileDiffPath(candidate) === hunk.path);
+      if (!file) return;
+      setSelectedLines({
+        id: buildFileDiffRenderKey(file),
+        range: { start: hunk.startLine, end: hunk.startLine, side: "additions" },
+      });
+    },
+    [files, progressKey, setHunkVisited],
+  );
   /**
    * The same controls the thread diff panel carries, in the same order, minus the
    * ignore-whitespace toggle: that is `git diff -w` on the server, and no host's pull request
@@ -1254,11 +1338,35 @@ export function PullRequestCodeTab({
                   <Button
                     type="button"
                     size="icon-sm"
+                    variant={reviewCoverageOpen ? "secondary" : "ghost"}
+                    aria-label="Review coverage"
+                    aria-pressed={reviewCoverageOpen}
+                    onClick={() => {
+                      setHistoryTarget(null);
+                      setReviewChecksOpen(false);
+                      setReviewCoverageOpen((open) => !open);
+                    }}
+                  />
+                }
+              >
+                <EyeIcon className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">
+                Coverage · {coverage.visitedHunks}/{coverage.totalHunks} hunks
+              </TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-sm"
                     variant={reviewChecksOpen ? "secondary" : "ghost"}
                     aria-label="Checks and workflow logs"
                     aria-pressed={reviewChecksOpen}
                     onClick={() => {
                       setHistoryTarget(null);
+                      setReviewCoverageOpen(false);
                       setReviewChecksOpen((open) => !open);
                     }}
                   />
@@ -1478,6 +1586,9 @@ export function PullRequestCodeTab({
             selectedPath={selectedReviewPath}
             onSelect={selectReviewPath}
             onOpenQuickOpen={() => setReviewQuickOpen(true)}
+            onSetReviewed={(path, reviewed) => {
+              if (progressKey) setFileReviewed(progressKey, path, reviewed);
+            }}
           />
         ) : null}
         <div className="flex min-w-0 flex-1 flex-col">
@@ -1611,7 +1722,19 @@ export function PullRequestCodeTab({
           </div>
           {unstructured}
         </div>
-        {reviewChecksOpen && reviewWorkspace ? (
+        {reviewCoverageOpen && reviewWorkspace ? (
+          <PullRequestReviewCoveragePanel
+            coverage={coverage}
+            onClose={() => setReviewCoverageOpen(false)}
+            onOpenHunk={openCoverageHunk}
+            onSetHunkVisited={(hunk, visited) => {
+              if (progressKey) setHunkVisited(progressKey, hunk.id, visited);
+            }}
+            onClear={() => {
+              if (progressKey) clearProgress(progressKey);
+            }}
+          />
+        ) : reviewChecksOpen && reviewWorkspace ? (
           <PullRequestReviewChecksPanel
             environmentId={reviewWorkspace.environmentId}
             cwd={reviewWorkspace.cwd}
