@@ -45,10 +45,26 @@ T3 Code works with the platforms your team already uses:
 - Command-click (Control-click on Windows and Linux) a pull request number in the sidebar to open it in your browser instead of in T3 Code
 - Check out a teammate's branch to review code locally
 
-**Inspect why a line exists**
+**Review code without leaving the pull request**
 
 - Open a pull request and choose **Review** to prepare an isolated checkout without leaving the
   pull request
+- Browse changed files in source-first reading order. Use the filter and arrow keys, or press
+  Command-K (Control-K on Windows and Linux) for quick open
+- In quick open, use `@` for declarations in the current file, `#` for declarations across the
+  checkout, `:` to jump to a line, and `/` to search project text
+- Right-click a file to copy its relative path
+- Switch between the selected diff and the complete syntax-highlighted file. Files outside the
+  change can also be opened from quick open
+- Select diff lines to start inline conversations or add the selection to an agent. Existing
+  conversations can be replied to, edited, resolved, or collapsed while reading
+- Open **Checks** to inspect reported jobs. GitHub Actions logs open in the review with search,
+  refresh, and copy controls; other providers keep their external details link
+- Submit pending comments together, approve the pull request, or request changes from the review
+  control at the bottom of the code view
+
+**Inspect why a line exists**
+
 - In the **Code** tab, select an unchanged or added line to open its Git history beside the diff
 - See who introduced the line, the commit date and message, a link to the introducing change and
   pull request, earlier code versions, nearby ownership, suggested reviewers, and history-based
