@@ -59,7 +59,7 @@ const RepoRoot = Effect.service(Path.Path).pipe(
   Effect.flatMap((path) => path.fromFileUrl(new URL("../../..", import.meta.url))),
 );
 
-const CODEAPI_ASSET_NAMES = ["codeapi_ir.mjs", "codeapi_ir.wasm"] as const;
+const CODEAPI_ASSET_NAMES = ["semasmith.mjs", "semasmith.wasm"] as const;
 
 const bundleCodeApiAssets = Effect.fn("bundleCodeApiAssets")(function* (serverDir: string) {
   const path = yield* Path.Path;
@@ -78,7 +78,7 @@ const bundleCodeApiAssets = Effect.fn("bundleCodeApiAssets")(function* (serverDi
   for (const name of CODEAPI_ASSET_NAMES) {
     yield* fs.copyFile(path.join(sourceDir, name), path.join(targetDir, name));
   }
-  yield* Effect.log("[cli] Bundled CodeAPI WASM into dist/codeapi");
+  yield* Effect.log("[cli] Bundled Semasmith WASM into dist/codeapi");
 });
 
 const readWorkspaceConfig = Effect.fn("readWorkspaceConfig")(function* () {

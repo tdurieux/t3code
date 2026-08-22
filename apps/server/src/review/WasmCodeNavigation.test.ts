@@ -1,12 +1,15 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as NodeURL from "node:url";
+import * as NodeZlib from "node:zlib";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 
 import { WasmCodeNavigation } from "./WasmCodeNavigation.ts";
 
 const fakeModule = `
-export default async function createCodeApi() {
+export default async function createCodeApi(moduleArg) {
+  await new Promise((resolve) => moduleArg.instantiateWasm({}, resolve));
   return {
     createProject(_files, language) {
       return {
@@ -165,12 +168,38 @@ export default async function createCodeApi() {
 `;
 
 describe("WasmCodeNavigation", () => {
+  it.effect("loads the gzip-compressed bundled engine", () =>
+    Effect.gen(function* () {
+      const navigation = new WasmCodeNavigation();
+      const wasmPath = NodeURL.fileURLToPath(
+        new URL("../../assets/codeapi/semasmith.wasm", import.meta.url),
+      );
+
+      const summary = yield* Effect.promise(() =>
+        navigation.build({
+          wasmPath,
+          projectKey: "bundled-engine",
+          language: "go",
+          files: [{ path: "example.go", source: "package example\nfunc run() {}\n" }],
+        }),
+      );
+
+      assert.strictEqual(summary.language, "go");
+      assert.strictEqual(summary.fileCount, 1);
+      yield* Effect.promise(() => navigation.dispose());
+    }),
+  );
+
   it.effect("keeps a project in a worker and resolves uses and declarations", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-codeapi-wasm-" });
-      const wasmPath = `${directory}/codeapi_ir.wasm`;
-      yield* fs.writeFileString(`${directory}/codeapi_ir.mjs`, fakeModule);
+      const wasmPath = `${directory}/semasmith.wasm`;
+      yield* fs.writeFile(
+        wasmPath,
+        NodeZlib.gzipSync(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00])),
+      );
+      yield* fs.writeFileString(`${directory}/semasmith.mjs`, fakeModule);
 
       const navigation = new WasmCodeNavigation();
       const summary = yield* Effect.promise(() =>

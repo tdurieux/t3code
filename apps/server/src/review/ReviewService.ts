@@ -302,7 +302,7 @@ export const make = Effect.gen(function* () {
       return yield* codeNavigationError(
         input,
         cwd,
-        "The bundled CodeAPI engine does not support this file type.",
+        "The bundled Semasmith engine does not support this file type.",
       );
     }
 
@@ -310,8 +310,8 @@ export const make = Effect.gen(function* () {
     const candidates = configuredWasm
       ? [configuredWasm]
       : [
-          NodeURL.fileURLToPath(new URL("./codeapi/codeapi_ir.wasm", import.meta.url)),
-          NodeURL.fileURLToPath(new URL("../../assets/codeapi/codeapi_ir.wasm", import.meta.url)),
+          NodeURL.fileURLToPath(new URL("./codeapi/semasmith.wasm", import.meta.url)),
+          NodeURL.fileURLToPath(new URL("../../assets/codeapi/semasmith.wasm", import.meta.url)),
         ];
     let wasmPath: string | null = null;
     for (const candidate of candidates) {
@@ -331,7 +331,7 @@ export const make = Effect.gen(function* () {
       return yield* codeNavigationError(
         input,
         cwd,
-        "The bundled CodeAPI engine assets are unavailable.",
+        "The bundled Semasmith engine assets are unavailable.",
       );
     }
 
@@ -509,7 +509,7 @@ export const make = Effect.gen(function* () {
       })
       .slice(0, MAX_CODE_NAVIGATION_RESULTS);
     return {
-      analyzer: "bundled-codeapi-wasm",
+      analyzer: "bundled-semasmith-wasm",
       language,
       selectedSymbol: query.symbol ? symbol(query.symbol) : null,
       definitionCandidates: symbols(query.definitionCandidates),

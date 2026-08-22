@@ -67,8 +67,10 @@ interface PendingRequest {
 }
 
 const WORKER_SOURCE = String.raw`
+const { readFileSync } = require("node:fs");
 const { parentPort, workerData } = require("node:worker_threads");
 const { pathToFileURL } = require("node:url");
+const { gunzipSync } = require("node:zlib");
 
 const projects = new Map();
 let projectSequence = 0;
@@ -79,10 +81,21 @@ function codeapi() {
     codeapiPromise = import(pathToFileURL(workerData.modulePath).href).then(async (loaded) => {
       const createCodeApi = loaded.default;
       if (typeof createCodeApi !== "function") {
-        throw new Error("The CodeAPI WASM module has no default factory export");
+        throw new Error("The Semasmith WASM module has no default factory export");
       }
+      const storedBytes = readFileSync(workerData.wasmPath);
+      const wasmBytes =
+        storedBytes[0] === 0x1f && storedBytes[1] === 0x8b
+          ? gunzipSync(storedBytes)
+          : storedBytes;
       return createCodeApi({
         locateFile: (name) => name.endsWith(".wasm") ? workerData.wasmPath : name,
+        instantiateWasm: (imports, receiveInstance) => {
+          const module = new WebAssembly.Module(wasmBytes);
+          const instance = new WebAssembly.Instance(module, imports);
+          receiveInstance(instance);
+          return instance.exports;
+        },
       });
     });
   }
@@ -178,7 +191,7 @@ async function handle(request) {
 
   if (request.operation === "query") {
     const entry = projects.get(request.projectKey);
-    if (!entry) throw new Error("CodeAPI project has not been built");
+    if (!entry) throw new Error("Semasmith project has not been built");
     entry.lastUsed = ++projectSequence;
     let symbol = entry.project.definitionAt(request.path, request.line, request.column);
     let references;
@@ -253,7 +266,7 @@ async function handle(request) {
     return null;
   }
 
-  throw new Error("Unknown CodeAPI worker operation");
+  throw new Error("Unknown Semasmith worker operation");
 }
 
 parentPort.on("message", async (request) => {
@@ -295,7 +308,7 @@ class WasmWorkerClient {
     this.#worker.on("error", (error) => this.#fail(error));
     this.#worker.on("exit", (code) => {
       if (!this.#closed && code !== 0) {
-        this.#fail(new Error(`CodeAPI WASM worker exited with status ${code}`));
+        this.#fail(new Error(`Semasmith WASM worker exited with status ${code}`));
       }
     });
   }
@@ -309,7 +322,7 @@ class WasmWorkerClient {
   }
 
   request<A>(request: Omit<WorkerRequest, "id">): Promise<A> {
-    if (this.#closed) return Promise.reject(new Error("CodeAPI WASM worker is closed"));
+    if (this.#closed) return Promise.reject(new Error("Semasmith WASM worker is closed"));
     const id = this.#nextRequestId++;
     return new Promise<A>((resolve, reject) => {
       this.#pending.set(id, {

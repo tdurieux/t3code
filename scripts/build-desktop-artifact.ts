@@ -395,8 +395,8 @@ const DesktopBuildInputArtifact = Schema.Literals([
   "desktop-resources",
   "server-dist",
   "bundled-server-client",
-  "bundled-codeapi-wasm",
-  "bundled-codeapi-module",
+  "bundled-semasmith-wasm",
+  "bundled-semasmith-module",
 ]);
 type DesktopBuildInputArtifact = typeof DesktopBuildInputArtifact.Type;
 const desktopBuildInputArtifactNames = {
@@ -404,8 +404,8 @@ const desktopBuildInputArtifactNames = {
   "desktop-resources": "desktopResources",
   "server-dist": "serverDist",
   "bundled-server-client": "bundled server client",
-  "bundled-codeapi-wasm": "bundled CodeAPI WASM",
-  "bundled-codeapi-module": "bundled CodeAPI module",
+  "bundled-semasmith-wasm": "bundled Semasmith WASM",
+  "bundled-semasmith-module": "bundled Semasmith module",
 } satisfies Record<DesktopBuildInputArtifact, string>;
 
 /**
@@ -2755,8 +2755,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     serverDist: path.join(repoRoot, "apps/server/dist"),
   };
   const bundledClientEntry = path.join(distDirs.serverDist, "client/index.html");
-  const bundledCodeApiWasm = path.join(distDirs.serverDist, "codeapi/codeapi_ir.wasm");
-  const bundledCodeApiModule = path.join(distDirs.serverDist, "codeapi/codeapi_ir.mjs");
+  const bundledSemasmithWasm = path.join(distDirs.serverDist, "codeapi/semasmith.wasm");
+  const bundledSemasmithModule = path.join(distDirs.serverDist, "codeapi/semasmith.mjs");
 
   if (!options.skipBuild) {
     yield* Effect.log("[desktop-artifact] Building desktop/server/web artifacts...");
@@ -2854,8 +2854,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     });
   }
   for (const input of [
-    { artifact: "bundled-codeapi-wasm", artifactPath: bundledCodeApiWasm },
-    { artifact: "bundled-codeapi-module", artifactPath: bundledCodeApiModule },
+    { artifact: "bundled-semasmith-wasm", artifactPath: bundledSemasmithWasm },
+    { artifact: "bundled-semasmith-module", artifactPath: bundledSemasmithModule },
   ] as const) {
     if (!(yield* fs.exists(input.artifactPath))) {
       return yield* new MissingDesktopBuildInputError({
