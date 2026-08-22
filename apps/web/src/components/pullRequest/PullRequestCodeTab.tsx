@@ -603,6 +603,7 @@ export function PullRequestCodeTab({
     }
     return placed;
   }, [commit, detail.reviewThreads, files]);
+  const commentsInline = reviewWorkspace === undefined && reviewCommentsVisible;
 
   const items = useMemo<CodeViewDiffItem<ReviewAnnotationGroup>[]>(
     () =>
@@ -627,7 +628,7 @@ export function PullRequestCodeTab({
           return created;
         };
 
-        for (const thread of reviewCommentsVisible ? detail.reviewThreads : []) {
+        for (const thread of commentsInline ? detail.reviewThreads : []) {
           if (thread.path !== path || thread.line === null) continue;
           if (!placedThreadIds.has(thread.id)) continue;
           groupAt(thread.side, thread.line).threads.push(thread);
@@ -635,13 +636,13 @@ export function PullRequestCodeTab({
         // Pending comments anchor to the head diff exactly like host threads do, so a
         // commit's diff must not place them either — the same line means other code there.
         if (commit === null) {
-          for (const comment of reviewCommentsVisible ? pendingComments : []) {
+          for (const comment of commentsInline ? pendingComments : []) {
             if (comment.path !== path) continue;
             const anchor = getReviewPositionAnchor(comment.position);
             groupAt(anchor.side, anchor.line).pending.push(comment);
           }
         }
-        if (draft?.fileKey === fileKey) {
+        if (reviewWorkspace === undefined && draft?.fileKey === fileKey) {
           const anchor = getReviewPositionAnchor(draft.position);
           groupAt(anchor.side, anchor.line).draft = true;
         }
@@ -693,13 +694,14 @@ export function PullRequestCodeTab({
       }),
     [
       commit,
+      commentsInline,
       detail.reviewThreads,
       draft,
       files,
       foldOverride,
       pendingComments,
       placedThreadIds,
-      reviewCommentsVisible,
+      reviewWorkspace,
       toggledFiles,
     ],
   );
@@ -812,6 +814,7 @@ export function PullRequestCodeTab({
       if (progressKey && visitedHunk) setHunkVisited(progressKey, visitedHunk.id, true);
       if (canInspectLineHistory) {
         setReviewChecksOpen(false);
+        setSemanticOpen(false);
         if (position.kind === "deleted") {
           setHistoryTarget(null);
           toastManager.add({
@@ -827,6 +830,12 @@ export function PullRequestCodeTab({
         }
       }
       if (!canCommentOnLines) return;
+      if (reviewWorkspace) {
+        setReviewCommentsVisible(true);
+        setReviewCoverageOpen(false);
+        setReviewChecksOpen(false);
+        setReviewHandoffOpen(false);
+      }
       setDraft({
         fileKey: item.id,
         path,
@@ -841,6 +850,7 @@ export function PullRequestCodeTab({
       canSelectLines,
       files,
       progressKey,
+      reviewWorkspace,
       reviewHunks,
       setHunkVisited,
     ],
@@ -1074,6 +1084,44 @@ export function PullRequestCodeTab({
     ],
   );
 
+  const renderDraftEditor = useCallback(
+    () =>
+      draft ? (
+        <DiffCommentAnnotation
+          kind="draft"
+          rangeLabel={`${draft.path}:${getReviewPositionAnchor(draft.position).line}`}
+          text=""
+          submitLabel="Add to review"
+          {...(onAddToAgentSelection
+            ? {
+                secondaryAction: {
+                  label: "Add to agent",
+                  onAction: (text: string) =>
+                    finishSelection(draft, text, (comment) =>
+                      onAddToAgentSelection({ comment, request: text }),
+                    ),
+                },
+              }
+            : {})}
+          onCancel={() => {
+            setDraft(null);
+            setSelectedLines(null);
+          }}
+          onComment={(body) => {
+            addComment(reviewKey, {
+              id: nextPendingReviewCommentId(),
+              path: draft.path,
+              ...(draft.oldPath === null ? {} : { oldPath: draft.oldPath }),
+              position: draft.position,
+              body,
+            });
+            setDraft(null);
+            setSelectedLines(null);
+          }}
+        />
+      ) : null,
+    [addComment, draft, finishSelection, onAddToAgentSelection, reviewKey],
+  );
   const renderAnnotation = useCallback(
     (annotation: ReviewAnnotation) => (
       <div className="py-1 font-sans text-foreground">
@@ -1085,51 +1133,10 @@ export function PullRequestCodeTab({
             onRemove={() => removeComment(reviewKey, comment.id)}
           />
         ))}
-        {annotation.metadata.draft && draft ? (
-          <DiffCommentAnnotation
-            kind="draft"
-            rangeLabel={`${draft.path}:${getReviewPositionAnchor(draft.position).line}`}
-            text=""
-            submitLabel="Add to review"
-            {...(onAddToAgentSelection
-              ? {
-                  secondaryAction: {
-                    label: "Add to agent",
-                    onAction: (text: string) =>
-                      finishSelection(draft, text, (comment) =>
-                        onAddToAgentSelection({ comment, request: text }),
-                      ),
-                  },
-                }
-              : {})}
-            onCancel={() => {
-              setDraft(null);
-              setSelectedLines(null);
-            }}
-            onComment={(body) => {
-              addComment(reviewKey, {
-                id: nextPendingReviewCommentId(),
-                path: draft.path,
-                ...(draft.oldPath === null ? {} : { oldPath: draft.oldPath }),
-                position: draft.position,
-                body,
-              });
-              setDraft(null);
-              setSelectedLines(null);
-            }}
-          />
-        ) : null}
+        {annotation.metadata.draft ? renderDraftEditor() : null}
       </div>
     ),
-    [
-      addComment,
-      draft,
-      finishSelection,
-      onAddToAgentSelection,
-      removeComment,
-      renderThreadCard,
-      reviewKey,
-    ],
+    [removeComment, renderDraftEditor, renderThreadCard, reviewKey],
   );
 
   /**
@@ -1251,6 +1258,33 @@ export function PullRequestCodeTab({
     },
     [files, progressKey, setHunkVisited],
   );
+  const selectedReviewFile = reviewFiles.find((file) => file.path === selectedReviewPath) ?? null;
+  const selectedFileHunks = coverage.hunks.filter((hunk) => hunk.path === selectedReviewPath);
+  const selectedReviewThreads = detail.reviewThreads.filter(
+    (thread) => thread.path === selectedReviewPath,
+  );
+  const selectedPendingComments = pendingComments.filter(
+    (comment) => comment.path === selectedReviewPath,
+  );
+  const commentsPanelOpen =
+    reviewCommentsVisible && !reviewCoverageOpen && !reviewChecksOpen && !reviewHandoffOpen;
+  const openReviewCommentLine = useCallback(
+    (path: string, line: number | null, side: PullRequestDiffSide) => {
+      setSelectedReviewPath(path);
+      setReviewReveal(null);
+      setReviewViewMode("diff");
+      if (line === null) return;
+      const file = files.find((candidate) => resolveFileDiffPath(candidate) === path);
+      if (!file) return;
+      setSelectedLines({
+        id: buildFileDiffRenderKey(file),
+        range: { start: line, end: line, side: toViewerSide(side) },
+      });
+      const hunk = findPullRequestReviewHunk(reviewHunks, { path, line, side });
+      if (progressKey && hunk) setHunkVisited(progressKey, hunk.id, true);
+    },
+    [files, progressKey, reviewHunks, setHunkVisited],
+  );
   /**
    * The same controls the thread diff panel carries, in the same order, minus the
    * ignore-whitespace toggle: that is `git diff -w` on the server, and no host's pull request
@@ -1310,23 +1344,6 @@ export function PullRequestCodeTab({
               ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
-        ) : null}
-        {reviewWorkspace && selectedReviewPath ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  className="hidden min-w-0 max-w-72 items-center gap-1.5 rounded px-1.5 py-1 font-mono text-[10px] text-foreground hover:bg-accent sm:flex"
-                  onClick={() => setReviewQuickOpen(true)}
-                />
-              }
-            >
-              <FileCode2Icon className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate">{selectedReviewPath}</span>
-            </TooltipTrigger>
-            <TooltipPopup side="bottom">{selectedReviewPath}</TooltipPopup>
-          </Tooltip>
         ) : null}
         {canInspectLineHistory ? (
           <span className="hidden shrink-0 items-center gap-1 text-violet-600 sm:flex dark:text-violet-300">
@@ -1469,50 +1486,31 @@ export function PullRequestCodeTab({
               <TooltipTrigger
                 render={
                   <Toggle
-                    aria-label={
-                      reviewCommentsVisible ? "Collapse review comments" : "Show review comments"
-                    }
+                    aria-label={commentsPanelOpen ? "Hide comments panel" : "Show comments panel"}
                     variant="ghost"
                     size="sm"
-                    pressed={reviewCommentsVisible}
-                    onPressedChange={(pressed) => setReviewCommentsVisible(Boolean(pressed))}
+                    pressed={commentsPanelOpen}
+                    onPressedChange={(pressed) => {
+                      setReviewCommentsVisible(Boolean(pressed));
+                      if (pressed) {
+                        setReviewCoverageOpen(false);
+                        setReviewChecksOpen(false);
+                        setReviewHandoffOpen(false);
+                      }
+                    }}
                   />
                 }
               >
-                {reviewCommentsVisible ? (
+                {commentsPanelOpen ? (
                   <MessageSquareIcon className="size-3.5" />
                 ) : (
                   <MessageSquareOffIcon className="size-3.5" />
                 )}
               </TooltipTrigger>
               <TooltipPopup side="top">
-                {reviewCommentsVisible ? "Collapse review comments" : "Show review comments"}
+                {commentsPanelOpen ? "Hide comments panel" : "Show comments panel"}
               </TooltipPopup>
             </Tooltip>
-            <ToggleGroup
-              className="shrink-0 gap-1"
-              size="sm"
-              value={[reviewViewMode]}
-              onValueChange={(value) => {
-                const next = value[0];
-                if (next === "diff" || next === "file") setReviewViewMode(next);
-              }}
-            >
-              <Toggle
-                aria-label="Selected file diff"
-                value="diff"
-                variant="ghost"
-                disabled={
-                  selectedReviewPath === null ||
-                  !reviewFiles.some((file) => file.path === selectedReviewPath)
-                }
-              >
-                <Rows3Icon className="size-3.5" />
-              </Toggle>
-              <Toggle aria-label="Full file" value="file" variant="ghost">
-                <FileCode2Icon className="size-3.5" />
-              </Toggle>
-            </ToggleGroup>
           </>
         ) : fileKeys.length > 0 ? (
           <Tooltip>
@@ -1682,9 +1680,89 @@ export function PullRequestCodeTab({
         ) : null}
         <div className="flex min-w-0 flex-1 flex-col">
           {toolbar}
+          {reviewWorkspace && selectedReviewPath ? (
+            <div className="shrink-0 border-b border-border/60 bg-background">
+              <div className="flex h-9 min-w-0 items-end px-2">
+                <button
+                  type="button"
+                  className="flex h-9 min-w-0 max-w-[55%] items-center gap-1.5 border-b-2 border-foreground px-2 font-mono text-[11px] text-foreground"
+                  onClick={() => setReviewQuickOpen(true)}
+                >
+                  <FileCode2Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{selectedReviewPath}</span>
+                </button>
+                <div
+                  className="ml-auto flex h-full items-end gap-1"
+                  role="tablist"
+                  aria-label="File view"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={reviewViewMode === "diff"}
+                    disabled={selectedReviewFile === null}
+                    className={cn(
+                      "flex h-9 items-center gap-1.5 border-b-2 px-3 text-xs transition-colors",
+                      reviewViewMode === "diff"
+                        ? "border-violet-500 text-foreground"
+                        : "border-transparent text-muted-foreground hover:text-foreground",
+                    )}
+                    onClick={() => {
+                      setReviewReveal(null);
+                      setReviewViewMode("diff");
+                    }}
+                  >
+                    <Rows3Icon className="size-3.5" />
+                    Changes
+                    {selectedFileHunks.length > 0 ? (
+                      <span className="tabular-nums text-[10px] text-muted-foreground">
+                        {selectedFileHunks.length}
+                      </span>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={reviewViewMode === "file"}
+                    className={cn(
+                      "flex h-9 items-center gap-1.5 border-b-2 px-3 text-xs transition-colors",
+                      reviewViewMode === "file"
+                        ? "border-violet-500 text-foreground"
+                        : "border-transparent text-muted-foreground hover:text-foreground",
+                    )}
+                    onClick={() => setReviewViewMode("file")}
+                  >
+                    <FileCode2Icon className="size-3.5" />
+                    Code
+                  </button>
+                </div>
+              </div>
+              {reviewViewMode === "diff" && selectedFileHunks.length > 0 ? (
+                <div className="flex gap-1 overflow-x-auto border-t border-border/40 px-2 py-1.5">
+                  {selectedFileHunks.map((hunk) => (
+                    <button
+                      key={hunk.id}
+                      type="button"
+                      className={cn(
+                        "flex shrink-0 items-center gap-1 rounded border px-2 py-1 text-[10px] transition-colors",
+                        hunk.visited
+                          ? "border-border/50 text-muted-foreground hover:bg-accent"
+                          : "border-violet-500/40 bg-violet-500/10 text-foreground hover:bg-violet-500/15",
+                      )}
+                      onClick={() => openCoverageHunk(hunk)}
+                    >
+                      <span>Hunk {hunk.index + 1}</span>
+                      <span className="font-mono text-emerald-600">+{hunk.additions}</span>
+                      <span className="font-mono text-rose-600">-{hunk.deletions}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {/* Above the code, closed, and counted: these belong to the change rather than to any
             line of it, and in the stream they read as cards dropped into the patch. */}
-          {reviewCommentsVisible && orphanFiles.size > 0 ? (
+          {reviewWorkspace === undefined && reviewCommentsVisible && orphanFiles.size > 0 ? (
             <Collapsible
               className="shrink-0 border-b border-border/60"
               open={orphansOpen}
@@ -1810,6 +1888,41 @@ export function PullRequestCodeTab({
             )}
             {reviewOverlay}
           </div>
+          {historyTarget && reviewWorkspace ? (
+            <PullRequestLineHistoryPanel
+              placement="bottom"
+              environmentId={reviewWorkspace.environmentId}
+              cwd={reviewWorkspace.cwd}
+              revision={reviewWorkspace.revision}
+              baseRef={detail.baseBranch}
+              path={historyTarget.path}
+              line={historyTarget.line}
+              onClose={() => setHistoryTarget(null)}
+            />
+          ) : semanticOpen && navigation.target && reviewWorkspace ? (
+            <PullRequestSemanticPanel
+              placement="bottom"
+              environmentId={reviewWorkspace.environmentId}
+              cwd={reviewWorkspace.cwd}
+              revision={reviewWorkspace.revision}
+              baseRef={detail.baseBranch}
+              target={navigation.target}
+              canGoBack={navigation.canBack}
+              canGoForward={navigation.canForward}
+              pinned={isPullRequestReviewSymbolPinned(pinnedSymbols, navigation.target)}
+              onNavigate={openSemanticTarget}
+              onBack={() => {
+                if (progressKey) moveNavigation(progressKey, -1);
+              }}
+              onForward={() => {
+                if (progressKey) moveNavigation(progressKey, 1);
+              }}
+              onTogglePin={() => {
+                if (progressKey) togglePinnedSymbol(progressKey, navigation.target!);
+              }}
+              onClose={() => setSemanticOpen(false)}
+            />
+          ) : null}
           {unstructured}
         </div>
         {reviewHandoffOpen && reviewWorkspace ? (
@@ -1855,38 +1968,97 @@ export function PullRequestCodeTab({
             }}
             onClose={() => setReviewChecksOpen(false)}
           />
-        ) : historyTarget && reviewWorkspace ? (
-          <PullRequestLineHistoryPanel
-            environmentId={reviewWorkspace.environmentId}
-            cwd={reviewWorkspace.cwd}
-            revision={reviewWorkspace.revision}
-            baseRef={detail.baseBranch}
-            path={historyTarget.path}
-            line={historyTarget.line}
-            onClose={() => setHistoryTarget(null)}
-          />
-        ) : semanticOpen && navigation.target && reviewWorkspace ? (
-          <PullRequestSemanticPanel
-            environmentId={reviewWorkspace.environmentId}
-            cwd={reviewWorkspace.cwd}
-            revision={reviewWorkspace.revision}
-            baseRef={detail.baseBranch}
-            target={navigation.target}
-            canGoBack={navigation.canBack}
-            canGoForward={navigation.canForward}
-            pinned={isPullRequestReviewSymbolPinned(pinnedSymbols, navigation.target)}
-            onNavigate={openSemanticTarget}
-            onBack={() => {
-              if (progressKey) moveNavigation(progressKey, -1);
-            }}
-            onForward={() => {
-              if (progressKey) moveNavigation(progressKey, 1);
-            }}
-            onTogglePin={() => {
-              if (progressKey) togglePinnedSymbol(progressKey, navigation.target!);
-            }}
-            onClose={() => setSemanticOpen(false)}
-          />
+        ) : commentsPanelOpen && reviewWorkspace ? (
+          <aside className="flex max-h-[45%] w-full shrink-0 flex-col border-t border-border/60 bg-background lg:max-h-none lg:h-full lg:w-[min(24rem,38vw)] lg:min-w-72 lg:border-t-0 lg:border-l">
+            <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-3">
+              <MessageSquareIcon className="size-3.5 text-violet-500" />
+              <h2 className="text-xs font-medium text-foreground">Comments</h2>
+              <span className="rounded bg-accent px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                {selectedReviewThreads.length +
+                  selectedPendingComments.length +
+                  (draft?.path === selectedReviewPath ? 1 : 0)}
+              </span>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Hide comments panel"
+                className="ml-auto"
+                onClick={() => setReviewCommentsVisible(false)}
+              >
+                <XIcon className="size-3.5" />
+              </Button>
+            </div>
+            {selectedReviewPath ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      className="flex min-h-8 w-full items-center gap-1.5 border-b border-border/40 px-3 text-left font-mono text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                      onClick={() => setReviewQuickOpen(true)}
+                    />
+                  }
+                >
+                  <FileCode2Icon className="size-3 shrink-0" />
+                  <span className="truncate">{selectedReviewPath}</span>
+                </TooltipTrigger>
+                <TooltipPopup side="left">{selectedReviewPath}</TooltipPopup>
+              </Tooltip>
+            ) : null}
+            <div className="min-h-0 flex-1 overflow-auto py-2">
+              {selectedReviewThreads.map((thread) => (
+                <section key={thread.id}>
+                  <button
+                    type="button"
+                    className="mx-3 flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                    onClick={() => openReviewCommentLine(thread.path, thread.line, thread.side)}
+                  >
+                    <FileCode2Icon className="size-3" />
+                    {thread.line === null ? "File comment" : `Line ${thread.line}`}
+                    {thread.isOutdated ? " · outdated" : ""}
+                  </button>
+                  {renderThreadCard(thread)}
+                </section>
+              ))}
+              {selectedPendingComments.map((comment) => {
+                const anchor = getReviewPositionAnchor(comment.position);
+                return (
+                  <section key={comment.id}>
+                    <button
+                      type="button"
+                      className="mx-3 flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                      onClick={() => openReviewCommentLine(comment.path, anchor.line, anchor.side)}
+                    >
+                      <FileCode2Icon className="size-3" />
+                      Line {anchor.line} · pending
+                    </button>
+                    <PendingReviewCommentCard
+                      comment={comment}
+                      onRemove={() => removeComment(reviewKey, comment.id)}
+                    />
+                  </section>
+                );
+              })}
+              {draft?.path === selectedReviewPath ? (
+                <section>
+                  <p className="mx-3 px-1.5 py-1 text-[10px] text-muted-foreground">
+                    Line {getReviewPositionAnchor(draft.position).line} · new comment
+                  </p>
+                  {renderDraftEditor()}
+                </section>
+              ) : null}
+              {selectedReviewThreads.length === 0 &&
+              selectedPendingComments.length === 0 &&
+              draft?.path !== selectedReviewPath ? (
+                <div className="flex h-full min-h-40 flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted-foreground">
+                  <MessageSquareIcon className="size-5 opacity-50" />
+                  <p>No comments on this file.</p>
+                  <p className="text-[10px]">Select a line in Changes to start a conversation.</p>
+                </div>
+              ) : null}
+            </div>
+          </aside>
         ) : null}
         {reviewWorkspace ? (
           <PullRequestReviewQuickOpen

@@ -49,15 +49,16 @@ T3 Code works with the platforms your team already uses:
 
 - Open a pull request and choose **Review** to prepare an isolated checkout without leaving the
   pull request
-- Browse changed files in source-first reading order. Use the filter and arrow keys, or press
-  Command-K (Control-K on Windows and Linux) for quick open
+- Browse changed files grouped as code, tests, docs, config, and generated files. Use the filter
+  and arrow keys, or press Command-K (Control-K on Windows and Linux) for quick open
 - In quick open, use `@` for declarations in the current file, `#` for declarations across the
   checkout, `:` to jump to a line, and `/` to search project text
 - Right-click a file to copy its relative path
-- Switch between the selected diff and the complete syntax-highlighted file. Files outside the
-  change can also be opened from quick open
-- Select diff lines to start inline conversations or add the selection to an agent. Existing
-  conversations can be replied to, edited, resolved, or collapsed while reading
+- Switch between **Changes** and the complete syntax-highlighted **Code** view in the center, and
+  jump between the selected file's hunks. Files outside the change can also be opened from quick
+  open
+- Read and manage conversations in the right comments panel. Select diff lines to start a
+  conversation or add the selection to an agent
 - Open **Checks** to inspect reported jobs. GitHub Actions logs open in the review with search,
   refresh, and copy controls; other providers keep their external details link
 - Submit pending comments together, approve the pull request, or request changes from the review
@@ -65,7 +66,8 @@ T3 Code works with the platforms your team already uses:
 
 **Inspect why a line exists**
 
-- In the **Code** tab, select an unchanged or added line to open its Git history beside the diff
+- In the **Code** tab, select an unchanged or added line to open its Git history in the bottom
+  Peek panel
 - See who introduced the line, the commit date and message, a link to the introducing change and
   pull request, earlier code versions, nearby ownership, suggested reviewers, and history-based
   risk signals

@@ -131,6 +131,7 @@ export function PullRequestSemanticPanel({
   canGoBack,
   canGoForward,
   pinned,
+  placement = "right",
   onNavigate,
   onBack,
   onForward,
@@ -145,6 +146,7 @@ export function PullRequestSemanticPanel({
   readonly canGoBack: boolean;
   readonly canGoForward: boolean;
   readonly pinned: boolean;
+  readonly placement?: "right" | "bottom";
   readonly onNavigate: (target: PullRequestSemanticTarget) => void;
   readonly onBack: () => void;
   readonly onForward: () => void;
@@ -256,7 +258,14 @@ export function PullRequestSemanticPanel({
   const selectedOwnership = ownershipAtLine(target.line);
 
   return (
-    <aside className="flex min-h-0 w-96 shrink-0 flex-col border-l border-border/60 bg-background">
+    <aside
+      className={cn(
+        "flex min-h-0 min-w-0 shrink-0 flex-col bg-background",
+        placement === "bottom"
+          ? "h-[min(22rem,45%)] w-full border-t border-border/60"
+          : "h-full w-96 border-l border-border/60",
+      )}
+    >
       <header className="shrink-0 border-b border-border/60 p-3">
         <div className="flex items-center gap-1">
           <Button

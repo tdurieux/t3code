@@ -37,6 +37,7 @@ import {
   selectPullRequestReviewDeclarations,
   selectPullRequestReviewFiles,
 } from "./pullRequestReviewQuickOpen.logic";
+import { groupPullRequestReviewFiles } from "./pullRequestReviewLayout.logic";
 
 export interface PullRequestReviewFileEntry {
   readonly path: string;
@@ -85,6 +86,12 @@ export function PullRequestReviewFileSidebar({
       ? files
       : files.filter((file) => words.every((word) => file.path.toLocaleLowerCase().includes(word)));
   }, [files, query]);
+  const groups = useMemo(() => groupPullRequestReviewFiles(visible), [visible]);
+  const navigableFiles = useMemo(() => groups.flatMap((group) => group.files), [groups]);
+  const indexByPath = useMemo(
+    () => new Map(navigableFiles.map((file, index) => [file.path, index])),
+    [navigableFiles],
+  );
 
   useEffect(() => setActiveIndex(0), [query]);
 
@@ -93,10 +100,12 @@ export function PullRequestReviewFileSidebar({
       event.preventDefault();
       setActiveIndex((current) => {
         const offset = event.key === "ArrowDown" ? 1 : -1;
-        return visible.length === 0 ? 0 : (current + offset + visible.length) % visible.length;
+        return navigableFiles.length === 0
+          ? 0
+          : (current + offset + navigableFiles.length) % navigableFiles.length;
       });
     } else if (event.key === "Enter") {
-      const file = visible[activeIndex];
+      const file = navigableFiles[activeIndex];
       if (file) onSelect(file.path);
     }
   };
@@ -124,77 +133,93 @@ export function PullRequestReviewFileSidebar({
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto py-1" role="listbox" aria-label="Changed files">
-        {visible.map((file, index) => {
-          const label = pathParts(file.path);
-          const selected = file.path === selectedPath;
-          return (
-            <button
-              key={file.path}
-              type="button"
-              role="option"
-              aria-selected={selected}
-              className={cn(
-                "flex w-full items-start gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent/60",
-                selected && "bg-accent text-accent-foreground",
-                !selected && index === activeIndex && "bg-accent/35",
-              )}
-              onMouseMove={() => setActiveIndex(index)}
-              onClick={() => onSelect(file.path)}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                copyPath(file.path, file.path);
-              }}
+        {groups.map((group) => (
+          <section key={group.type} aria-labelledby={`review-file-group-${group.type}`}>
+            <h3
+              id={`review-file-group-${group.type}`}
+              className="sticky top-0 z-10 flex h-7 items-center gap-2 border-y border-border/45 bg-background/95 px-2.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur"
             >
-              {onSetReviewed ? (
-                <span
-                  role="checkbox"
-                  aria-label={
-                    file.reviewed ? `Mark ${file.path} unreviewed` : `Mark ${file.path} reviewed`
-                  }
-                  aria-checked={file.reviewed === true}
-                  tabIndex={0}
-                  className="mt-0.5 shrink-0 rounded text-muted-foreground hover:text-foreground"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onSetReviewed(file.path, file.reviewed !== true);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter" && event.key !== " ") return;
+              <span>{group.label}</span>
+              <span className="ml-auto tabular-nums">{group.files.length}</span>
+            </h3>
+            {group.files.map((file) => {
+              const index = indexByPath.get(file.path) ?? 0;
+              const label = pathParts(file.path);
+              const selected = file.path === selectedPath;
+              return (
+                <button
+                  key={file.path}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  className={cn(
+                    "flex w-full items-start gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent/60",
+                    selected && "bg-accent text-accent-foreground",
+                    !selected && index === activeIndex && "bg-accent/35",
+                  )}
+                  onMouseMove={() => setActiveIndex(index)}
+                  onClick={() => onSelect(file.path)}
+                  onContextMenu={(event) => {
                     event.preventDefault();
-                    event.stopPropagation();
-                    onSetReviewed(file.path, file.reviewed !== true);
+                    copyPath(file.path, file.path);
                   }}
                 >
-                  {file.reviewed ? (
-                    <CheckCircle2Icon className="size-3.5 text-emerald-500" />
+                  {onSetReviewed ? (
+                    <span
+                      role="checkbox"
+                      aria-label={
+                        file.reviewed
+                          ? `Mark ${file.path} unreviewed`
+                          : `Mark ${file.path} reviewed`
+                      }
+                      aria-checked={file.reviewed === true}
+                      tabIndex={0}
+                      className="mt-0.5 shrink-0 rounded text-muted-foreground hover:text-foreground"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onSetReviewed(file.path, file.reviewed !== true);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onSetReviewed(file.path, file.reviewed !== true);
+                      }}
+                    >
+                      {file.reviewed ? (
+                        <CheckCircle2Icon className="size-3.5 text-emerald-500" />
+                      ) : (
+                        <CircleIcon className="size-3.5" />
+                      )}
+                    </span>
                   ) : (
-                    <CircleIcon className="size-3.5" />
+                    <FileCode2Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                   )}
-                </span>
-              ) : (
-                <FileCode2Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-              )}
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium">{label.name}</span>
-                {label.parent ? (
-                  <span className="block truncate text-[10px] text-muted-foreground">
-                    {label.parent}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{label.name}</span>
+                    {label.parent ? (
+                      <span className="block truncate text-[10px] text-muted-foreground">
+                        {label.parent}
+                      </span>
+                    ) : null}
+                    {file.totalHunks ? (
+                      <span className="block text-[9px] tabular-nums text-muted-foreground">
+                        {file.visitedHunks ?? 0}/{file.totalHunks} hunks
+                      </span>
+                    ) : null}
                   </span>
-                ) : null}
-                {file.totalHunks ? (
-                  <span className="block text-[9px] tabular-nums text-muted-foreground">
-                    {file.visitedHunks ?? 0}/{file.totalHunks} hunks
+                  <span className="shrink-0 font-mono text-[9px] tabular-nums">
+                    <span className="text-emerald-600 dark:text-emerald-400">
+                      +{file.additions}
+                    </span>{" "}
+                    <span className="text-rose-600 dark:text-rose-400">-{file.deletions}</span>
                   </span>
-                ) : null}
-              </span>
-              <span className="shrink-0 font-mono text-[9px] tabular-nums">
-                <span className="text-emerald-600 dark:text-emerald-400">+{file.additions}</span>{" "}
-                <span className="text-rose-600 dark:text-rose-400">-{file.deletions}</span>
-              </span>
-            </button>
-          );
-        })}
-        {visible.length === 0 ? (
+                </button>
+              );
+            })}
+          </section>
+        ))}
+        {navigableFiles.length === 0 ? (
           <p className="px-3 py-6 text-center text-xs text-muted-foreground">No matching files.</p>
         ) : null}
       </div>

@@ -415,6 +415,7 @@ export function PullRequestLineHistoryPanel({
   baseRef,
   path,
   line,
+  placement = "right",
   onClose,
 }: {
   readonly environmentId: EnvironmentId;
@@ -423,6 +424,7 @@ export function PullRequestLineHistoryPanel({
   readonly baseRef?: string;
   readonly path: string;
   readonly line: number;
+  readonly placement?: "right" | "bottom";
   readonly onClose: () => void;
 }) {
   const query = useEnvironmentQuery(
@@ -433,7 +435,14 @@ export function PullRequestLineHistoryPanel({
   );
 
   return (
-    <aside className="flex h-full max-h-[45%] w-full min-w-0 shrink-0 flex-col border-t border-border/60 bg-background lg:max-h-none lg:w-[min(26rem,45vw)] lg:min-w-80 lg:border-t-0 lg:border-l">
+    <aside
+      className={cn(
+        "flex min-h-0 min-w-0 shrink-0 flex-col bg-background",
+        placement === "bottom"
+          ? "h-[min(22rem,45%)] w-full border-t border-border/60"
+          : "h-full max-h-[45%] w-full border-t border-border/60 lg:max-h-none lg:w-[min(26rem,45vw)] lg:min-w-80 lg:border-t-0 lg:border-l",
+      )}
+    >
       <header className="flex h-10 min-h-10 items-center gap-2 border-b border-border/60 px-3">
         <HistoryIcon className="size-3.5 text-violet-500" />
         <div className="min-w-0 flex-1">
