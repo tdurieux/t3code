@@ -30,10 +30,19 @@ import {
   XIcon,
 } from "lucide-react";
 import { useAtomRefresh } from "@effect/atom-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 
 import { useClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
+import { useResizableWidth } from "~/hooks/useResizableWidth";
 import { areAllDiffFilesCollapsed } from "~/lib/diffCollapse";
 import { pullRequestFindingKey, type PullRequestFinding } from "./pullRequestDetail.logic";
 import { canEditPullRequestComment } from "./pullRequestEditing.logic";
@@ -76,6 +85,7 @@ import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { PendingReviewCommentCard, ReviewThreadCard } from "./PullRequestReviewAnnotation";
 import { PullRequestReviewBar } from "./PullRequestReviewBar";
+import { ReviewColumnResizeHandle } from "../review/ReviewColumnResizeHandle";
 import { PullRequestLineHistoryPanel } from "./PullRequestLineHistoryPanel";
 import { PullRequestFullFileView } from "./PullRequestFullFileView";
 import { PullRequestReviewChecksPanel } from "./PullRequestReviewChecksPanel";
@@ -284,6 +294,20 @@ export function PullRequestCodeTab({
   const [reviewHandoffOpen, setReviewHandoffOpen] = useState(false);
   const [semanticOpen, setSemanticOpen] = useState(false);
   const [reviewCommentsVisible, setReviewCommentsVisible] = useState(true);
+  const reviewFileColumn = useResizableWidth({
+    storageKey: "t3code:pull-request-review-files-width",
+    defaultWidth: 264,
+    minWidth: 208,
+    maxWidth: 420,
+    edge: "right",
+  });
+  const reviewCommentsColumn = useResizableWidth({
+    storageKey: "t3code:pull-request-review-comments-width",
+    defaultWidth: 360,
+    minWidth: 288,
+    maxWidth: 520,
+    edge: "left",
+  });
   const [reviewViewMode, setReviewViewMode] = useState<"diff" | "file">("diff");
   const [selectedReviewPath, setSelectedReviewPath] = useState<string | null>(null);
   const [reviewReveal, setReviewReveal] = useState<{
@@ -1671,6 +1695,8 @@ export function PullRequestCodeTab({
           <PullRequestReviewFileSidebar
             files={reviewFiles}
             selectedPath={selectedReviewPath}
+            width={reviewFileColumn.width}
+            resizeHandlers={reviewFileColumn.handlers}
             onSelect={selectReviewPath}
             onOpenQuickOpen={() => setReviewQuickOpen(true)}
             onSetReviewed={(path, reviewed) => {
@@ -1969,7 +1995,17 @@ export function PullRequestCodeTab({
             onClose={() => setReviewChecksOpen(false)}
           />
         ) : commentsPanelOpen && reviewWorkspace ? (
-          <aside className="flex max-h-[45%] w-full shrink-0 flex-col border-t border-border/60 bg-background lg:max-h-none lg:h-full lg:w-[min(24rem,38vw)] lg:min-w-72 lg:border-t-0 lg:border-l">
+          <aside
+            className="relative flex max-h-[45%] w-full shrink-0 flex-col border-t border-border/60 bg-card/20 lg:h-full lg:max-h-none lg:w-[var(--review-comments-width)] lg:min-w-72 lg:border-t-0 lg:border-l"
+            style={
+              {
+                "--review-comments-width": `${reviewCommentsColumn.width}px`,
+              } as CSSProperties
+            }
+          >
+            <div className="hidden lg:block">
+              <ReviewColumnResizeHandle edge="left" handlers={reviewCommentsColumn.handlers} />
+            </div>
             <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-3">
               <MessageSquareIcon className="size-3.5 text-violet-500" />
               <h2 className="text-xs font-medium text-foreground">Comments</h2>

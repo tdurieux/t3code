@@ -2,18 +2,23 @@ import type { EnvironmentId, ProjectContentMatch } from "@t3tools/contracts";
 import {
   BracesIcon,
   CheckCircle2Icon,
+  ChevronDownIcon,
   CircleIcon,
   FileCode2Icon,
+  FolderOpenIcon,
   SearchIcon,
   TextSearchIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import type { ResizableWidthHandlers } from "~/hooks/useResizableWidth";
 import { useProjectContentSearch, useProjectPathSearch } from "~/state/queries";
 import { cn } from "~/lib/utils";
+import { groupReviewFilesByFolder, reviewFilePathLabel } from "~/reviewFilePath";
 
 import { useProjectFileQuery } from "../files/projectFilesQueryState";
+import { ReviewColumnResizeHandle } from "../review/ReviewColumnResizeHandle";
 import {
   Command,
   CommandCollection,
@@ -48,13 +53,6 @@ export interface PullRequestReviewFileEntry {
   readonly totalHunks?: number;
 }
 
-function pathParts(path: string) {
-  const slash = path.lastIndexOf("/");
-  return slash < 0
-    ? { name: path, parent: "" }
-    : { name: path.slice(slash + 1), parent: path.slice(0, slash) };
-}
-
 function useCopyReviewPath() {
   return useCopyToClipboard<string>({
     target: "relative file path",
@@ -70,15 +68,20 @@ export function PullRequestReviewFileSidebar({
   onSelect,
   onOpenQuickOpen,
   onSetReviewed,
+  width,
+  resizeHandlers,
 }: {
   readonly files: ReadonlyArray<PullRequestReviewFileEntry>;
   readonly selectedPath: string | null;
   readonly onSelect: (path: string) => void;
   readonly onOpenQuickOpen: () => void;
   readonly onSetReviewed?: (path: string, reviewed: boolean) => void;
+  readonly width: number;
+  readonly resizeHandlers: ResizableWidthHandlers;
 }) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set());
   const copyPath = useCopyReviewPath();
   const visible = useMemo(() => {
     const words = query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
@@ -87,10 +90,24 @@ export function PullRequestReviewFileSidebar({
       : files.filter((file) => words.every((word) => file.path.toLocaleLowerCase().includes(word)));
   }, [files, query]);
   const groups = useMemo(() => groupPullRequestReviewFiles(visible), [visible]);
-  const navigableFiles = useMemo(() => groups.flatMap((group) => group.files), [groups]);
+  const navigableFiles = useMemo(
+    () => groups.flatMap((group) => (collapsedGroups.has(group.type) ? [] : group.files)),
+    [collapsedGroups, groups],
+  );
   const indexByPath = useMemo(
     () => new Map(navigableFiles.map((file, index) => [file.path, index])),
     [navigableFiles],
+  );
+  const totals = useMemo(
+    () =>
+      visible.reduce(
+        (total, file) => ({
+          additions: total.additions + file.additions,
+          deletions: total.deletions + file.deletions,
+        }),
+        { additions: 0, deletions: 0 },
+      ),
+    [visible],
   );
 
   useEffect(() => setActiveIndex(0), [query]);
@@ -111,114 +128,174 @@ export function PullRequestReviewFileSidebar({
   };
 
   return (
-    <aside className="hidden w-64 shrink-0 flex-col border-r border-border/60 bg-muted/10 md:flex">
-      <div className="border-b border-border/60 p-2">
-        <div className="relative">
-          <SearchIcon className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+    <aside
+      className="relative hidden shrink-0 flex-col border-r border-border/65 bg-card/20 md:flex"
+      style={{ width: `${width}px` }}
+      aria-label="Changed files"
+    >
+      <ReviewColumnResizeHandle edge="right" handlers={resizeHandlers} />
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-2">
+        <div className="relative min-w-0 flex-1">
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-1 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            className="h-7 pl-7 pr-12 text-xs"
+            className="h-7 border-0 bg-transparent pr-12 pl-6 text-xs shadow-none focus-visible:ring-0"
             aria-label="Filter changed files"
-            placeholder="Filter files"
+            placeholder="Filter…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={onFilterKeyDown}
           />
           <button
             type="button"
-            className="absolute right-1 top-1/2 -translate-y-1/2 rounded px-1 py-0.5 text-[9px] text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="absolute top-1/2 right-0 -translate-y-1/2 rounded px-1 py-0.5 text-[9px] text-muted-foreground hover:bg-accent hover:text-foreground"
             onClick={onOpenQuickOpen}
           >
             <Kbd>⌘K</Kbd>
           </button>
         </div>
+        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+          {visible.length}
+        </span>
+        <span className="shrink-0 font-mono text-[10px] text-emerald-500">+{totals.additions}</span>
+        {totals.deletions > 0 ? (
+          <span className="shrink-0 font-mono text-[10px] text-rose-500">−{totals.deletions}</span>
+        ) : null}
       </div>
       <div className="min-h-0 flex-1 overflow-auto py-1" role="listbox" aria-label="Changed files">
-        {groups.map((group) => (
-          <section key={group.type} aria-labelledby={`review-file-group-${group.type}`}>
-            <h3
-              id={`review-file-group-${group.type}`}
-              className="sticky top-0 z-10 flex h-7 items-center gap-2 border-y border-border/45 bg-background/95 px-2.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur"
-            >
-              <span>{group.label}</span>
-              <span className="ml-auto tabular-nums">{group.files.length}</span>
-            </h3>
-            {group.files.map((file) => {
-              const index = indexByPath.get(file.path) ?? 0;
-              const label = pathParts(file.path);
-              const selected = file.path === selectedPath;
-              return (
-                <button
-                  key={file.path}
-                  type="button"
-                  role="option"
-                  aria-selected={selected}
-                  className={cn(
-                    "flex w-full items-start gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent/60",
-                    selected && "bg-accent text-accent-foreground",
-                    !selected && index === activeIndex && "bg-accent/35",
-                  )}
-                  onMouseMove={() => setActiveIndex(index)}
-                  onClick={() => onSelect(file.path)}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    copyPath(file.path, file.path);
-                  }}
-                >
-                  {onSetReviewed ? (
-                    <span
-                      role="checkbox"
-                      aria-label={
-                        file.reviewed
-                          ? `Mark ${file.path} unreviewed`
-                          : `Mark ${file.path} reviewed`
-                      }
-                      aria-checked={file.reviewed === true}
-                      tabIndex={0}
-                      className="mt-0.5 shrink-0 rounded text-muted-foreground hover:text-foreground"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onSetReviewed(file.path, file.reviewed !== true);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter" && event.key !== " ") return;
-                        event.preventDefault();
-                        event.stopPropagation();
-                        onSetReviewed(file.path, file.reviewed !== true);
-                      }}
-                    >
-                      {file.reviewed ? (
-                        <CheckCircle2Icon className="size-3.5 text-emerald-500" />
-                      ) : (
-                        <CircleIcon className="size-3.5" />
-                      )}
-                    </span>
+        {groups.map((group) => {
+          const collapsed = collapsedGroups.has(group.type);
+          const reviewed = group.files.filter((file) => file.reviewed).length;
+          const additions = group.files.reduce((total, file) => total + file.additions, 0);
+          const deletions = group.files.reduce((total, file) => total + file.deletions, 0);
+          return (
+            <section key={group.type} aria-labelledby={`review-file-group-${group.type}`}>
+              <button
+                type="button"
+                id={`review-file-group-${group.type}`}
+                className="flex h-8 w-full items-center gap-1.5 px-3 text-left text-[10px] font-medium text-muted-foreground hover:bg-accent/45 hover:text-foreground"
+                aria-expanded={!collapsed}
+                onClick={() =>
+                  setCollapsedGroups((current) => {
+                    const next = new Set(current);
+                    if (next.has(group.type)) next.delete(group.type);
+                    else next.add(group.type);
+                    return next;
+                  })
+                }
+              >
+                <ChevronDownIcon
+                  className={cn("size-3 shrink-0 transition-transform", collapsed && "-rotate-90")}
+                />
+                <span className="min-w-0 flex-1 truncate uppercase tracking-wider">
+                  {group.label}
+                </span>
+                <span className="font-mono text-[9px] text-emerald-600/75">+{additions}</span>
+                {deletions > 0 ? (
+                  <span className="font-mono text-[9px] text-rose-600/75">−{deletions}</span>
+                ) : null}
+                <span className="w-4 text-right font-mono text-[9px]">
+                  {reviewed === group.files.length ? (
+                    <CheckCircle2Icon className="ml-auto size-3 text-emerald-500" />
                   ) : (
-                    <FileCode2Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                    group.files.length
                   )}
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{label.name}</span>
-                    {label.parent ? (
-                      <span className="block truncate text-[10px] text-muted-foreground">
-                        {label.parent}
-                      </span>
-                    ) : null}
-                    {file.totalHunks ? (
-                      <span className="block text-[9px] tabular-nums text-muted-foreground">
-                        {file.visitedHunks ?? 0}/{file.totalHunks} hunks
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="shrink-0 font-mono text-[9px] tabular-nums">
-                    <span className="text-emerald-600 dark:text-emerald-400">
-                      +{file.additions}
-                    </span>{" "}
-                    <span className="text-rose-600 dark:text-rose-400">-{file.deletions}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </section>
-        ))}
+                </span>
+              </button>
+              {!collapsed
+                ? groupReviewFilesByFolder(group.files).map((folder) => (
+                    <div key={folder.parent || `root:${group.type}`} className="mb-1 last:mb-0">
+                      <div className="mx-3 flex h-6 items-center gap-1.5 px-1 font-mono text-[9px] text-muted-foreground/70">
+                        <FolderOpenIcon className="size-3 shrink-0 text-sky-500/65" />
+                        <span className="min-w-0 flex-1 truncate">
+                          {folder.label || "Repository root"}
+                        </span>
+                        {folder.files.length > 1 ? (
+                          <span className="shrink-0 tabular-nums text-muted-foreground/50">
+                            {folder.files.length}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="relative ml-5 border-l border-border/45">
+                        {folder.files.map((file) => {
+                          const index = indexByPath.get(file.path) ?? 0;
+                          const label = reviewFilePathLabel(file.path);
+                          const selected = file.path === selectedPath;
+                          return (
+                            <button
+                              key={file.path}
+                              type="button"
+                              role="option"
+                              aria-selected={selected}
+                              aria-label={file.path}
+                              className={cn(
+                                "-ml-px flex h-8 w-[calc(100%+1px)] items-center gap-1.5 border-l-2 border-l-transparent px-2 text-left text-[11px] hover:bg-accent/55",
+                                selected && "border-l-primary bg-accent/75 text-foreground",
+                                !selected && index === activeIndex && "bg-accent/35",
+                              )}
+                              onMouseMove={() => setActiveIndex(index)}
+                              onClick={() => onSelect(file.path)}
+                              onContextMenu={(event) => {
+                                event.preventDefault();
+                                copyPath(file.path, file.path);
+                              }}
+                            >
+                              {onSetReviewed ? (
+                                <span
+                                  role="checkbox"
+                                  aria-label={
+                                    file.reviewed
+                                      ? `Mark ${file.path} unreviewed`
+                                      : `Mark ${file.path} reviewed`
+                                  }
+                                  aria-checked={file.reviewed === true}
+                                  tabIndex={0}
+                                  className="shrink-0 rounded text-muted-foreground hover:text-foreground"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    onSetReviewed(file.path, file.reviewed !== true);
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (event.key !== "Enter" && event.key !== " ") return;
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    onSetReviewed(file.path, file.reviewed !== true);
+                                  }}
+                                >
+                                  {file.reviewed ? (
+                                    <CheckCircle2Icon className="size-3.5 text-emerald-500" />
+                                  ) : (
+                                    <CircleIcon className="size-3.5" />
+                                  )}
+                                </span>
+                              ) : (
+                                <FileCode2Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                              )}
+                              <span className="min-w-0 flex-1 truncate font-mono font-medium">
+                                {label.name}
+                              </span>
+                              {file.totalHunks ? (
+                                <span className="shrink-0 font-mono text-[9px] tabular-nums text-muted-foreground">
+                                  {file.visitedHunks ?? 0}/{file.totalHunks}
+                                </span>
+                              ) : null}
+                              <span className="shrink-0 font-mono text-[9px] tabular-nums">
+                                <span className="text-emerald-600 dark:text-emerald-400">
+                                  +{file.additions}
+                                </span>{" "}
+                                <span className="text-rose-600 dark:text-rose-400">
+                                  −{file.deletions}
+                                </span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))
+                : null}
+            </section>
+          );
+        })}
         {navigableFiles.length === 0 ? (
           <p className="px-3 py-6 text-center text-xs text-muted-foreground">No matching files.</p>
         ) : null}
@@ -426,7 +503,7 @@ export function PullRequestReviewQuickOpen({
                   </CommandGroupLabel>
                   <CommandCollection>
                     {(file) => {
-                      const label = pathParts(file.path);
+                      const label = reviewFilePathLabel(file.path);
                       return (
                         <CommandItem
                           value={file.path}
