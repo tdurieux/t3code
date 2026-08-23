@@ -23,6 +23,8 @@ import {
   LayersIcon,
   PenLineIcon,
   LoaderIcon,
+  PanelLeftCloseIcon,
+  PanelLeftIcon,
   RefreshCwIcon,
   SearchIcon,
 } from "lucide-react";
@@ -1198,6 +1200,10 @@ function PullRequestsRouteView() {
           projectId: activePullRequestSurface.projectId as ProjectId,
         }
       : null;
+  const [pullRequestListMinimized, setPullRequestListMinimized] = useState(false);
+  useEffect(() => {
+    if (!rightPanelState.isOpen) setPullRequestListMinimized(false);
+  }, [rightPanelState.isOpen]);
 
   const selectSurfaceInUrl = (surface: PullRequestSurface | null) =>
     updateSearch(
@@ -1216,6 +1222,7 @@ function PullRequestsRouteView() {
   const toggleRightPanel = () => {
     if (rightPanelRef === null) return;
     if (rightPanelState.isOpen) {
+      setPullRequestListMinimized(false);
       useRightPanelStore.getState().close(rightPanelRef);
       updateSearch(clearedSelection);
       return;
@@ -1305,6 +1312,33 @@ function PullRequestsRouteView() {
       onToggleTerminal={() => undefined}
       onToggleRightPanel={toggleRightPanel}
     />
+  );
+  const pullRequestListControl = (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label={
+              pullRequestListMinimized ? "Show pull request list" : "Minimize pull request list"
+            }
+            aria-pressed={pullRequestListMinimized}
+            onClick={() => setPullRequestListMinimized((minimized) => !minimized)}
+          />
+        }
+      >
+        {pullRequestListMinimized ? (
+          <PanelLeftIcon className="size-4" />
+        ) : (
+          <PanelLeftCloseIcon className="size-4" />
+        )}
+      </TooltipTrigger>
+      <TooltipPopup side="bottom">
+        {pullRequestListMinimized ? "Show pull request list" : "Minimize pull request list"}
+      </TooltipPopup>
+    </Tooltip>
   );
   const openPanelControls = (
     <div
@@ -1546,16 +1580,28 @@ function PullRequestsRouteView() {
     useRightPanelStore.getState().closeAllSurfaces(rightPanelRef);
     selectSurfaceInUrl(null);
   };
+  const pullRequestListHidden =
+    pullRequestListMinimized &&
+    rightPanelState.isOpen &&
+    activePullRequestSurface !== null &&
+    panelEnvironmentId !== null;
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <div className="relative flex min-h-0 flex-1">
         {pullRequestsSupported && rightPanelState.isOpen ? openPanelControls : null}
-        <PullRequestsColumn {...columnProps} />
+        {pullRequestListHidden ? null : <PullRequestsColumn {...columnProps} />}
 
         {rightPanelState.isOpen && activePullRequestSurface && panelEnvironmentId !== null ? (
           <RightPanelTabs
             mode="inline"
+            maximized={pullRequestListHidden}
+            layoutControls={
+              <div className="flex shrink-0 items-center gap-1">
+                {pullRequestListControl}
+                {panelToggleControls}
+              </div>
+            }
             widthStorageKey="t3code:pull-request-panel-width"
             // Default to roughly half the viewport: the PR list needs more
             // room than a chat, so the 540px chat-preview default squashes
