@@ -1329,9 +1329,14 @@ export function PullRequestCodeTab({
     (hunk: PullRequestReviewHunk) => {
       if (progressKey) setHunkVisited(progressKey, hunk.id, true);
       setSelectedReviewPath(hunk.path);
-      setReviewViewMode("diff");
       setReviewChecksOpen(false);
       setHistoryTarget(null);
+      if (reviewViewMode === "file") {
+        setSelectedLines(null);
+        setReviewReveal({ path: hunk.path, line: hunk.startLine, column: 1 });
+        return;
+      }
+      setReviewReveal(null);
       const file = files.find((candidate) => resolveFileDiffPath(candidate) === hunk.path);
       if (!file) return;
       setSelectedLines({
@@ -1339,7 +1344,7 @@ export function PullRequestCodeTab({
         range: { start: hunk.startLine, end: hunk.startLine, side: "additions" },
       });
     },
-    [files, progressKey, setHunkVisited],
+    [files, progressKey, reviewViewMode, setHunkVisited],
   );
   const selectedReviewFile = reviewFiles.find((file) => file.path === selectedReviewPath) ?? null;
   const selectedFileHunks = coverage.hunks.filter((hunk) => hunk.path === selectedReviewPath);
@@ -1351,20 +1356,31 @@ export function PullRequestCodeTab({
     const position = selectedReviewPath
       ? {
           path: selectedReviewPath,
-          ...(selectedLines?.id === selectedDiffFileKey
-            ? {
-                line: selectedLines.range.start,
-                side:
-                  selectedLines.range.side === "deletions" ? ("left" as const) : ("right" as const),
-              }
-            : {}),
+          ...(reviewViewMode === "file" && reviewReveal?.path === selectedReviewPath
+            ? { line: reviewReveal.line, side: "right" as const }
+            : selectedLines?.id === selectedDiffFileKey
+              ? {
+                  line: selectedLines.range.start,
+                  side:
+                    selectedLines.range.side === "deletions"
+                      ? ("left" as const)
+                      : ("right" as const),
+                }
+              : {}),
         }
       : null;
     return {
       previous: adjacentPullRequestReviewHunk(coverage.hunks, position, "previous"),
       next: adjacentPullRequestReviewHunk(coverage.hunks, position, "next"),
     };
-  }, [coverage.hunks, selectedDiffFileKey, selectedLines, selectedReviewPath]);
+  }, [
+    coverage.hunks,
+    reviewReveal,
+    reviewViewMode,
+    selectedDiffFileKey,
+    selectedLines,
+    selectedReviewPath,
+  ]);
   const navigateReviewHunk = useCallback(
     (direction: "previous" | "next") => {
       const hunk = adjacentHunks[direction];
