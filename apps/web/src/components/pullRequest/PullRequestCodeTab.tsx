@@ -579,6 +579,7 @@ export function PullRequestCodeTab({
         reviewed: reviewed.has(path),
         visitedHunks: hunkProgress?.visited ?? 0,
         totalHunks: hunkProgress?.total ?? 0,
+        hunks: coverage.hunks.filter((hunk) => hunk.path === path),
       };
     });
   }, [coverage.hunks, files, progress.reviewedFiles]);
@@ -1680,6 +1681,7 @@ export function PullRequestCodeTab({
             width={reviewFileColumn.width}
             resizeHandlers={reviewFileColumn.handlers}
             onSelect={selectReviewPath}
+            onOpenHunk={openCoverageHunk}
             onOpenQuickOpen={() => setReviewQuickOpen(true)}
             onSetReviewed={(path, reviewed) => {
               if (progressKey) setFileReviewed(progressKey, path, reviewed);
