@@ -42,3 +42,16 @@ export function isFileDiffCollapsed(
   const foldedByDefault = foldOverride !== "expanded";
   return toggledFileKeys.has(fileKey) ? !foldedByDefault : foldedByDefault;
 }
+
+/** Opens one file without changing the toolbar's default for the rest of the diff. */
+export function expandFileDiff(
+  fileKey: string,
+  foldOverride: DiffFoldOverride,
+  toggledFileKeys: ReadonlySet<string>,
+): ReadonlySet<string> {
+  if (!isFileDiffCollapsed(fileKey, foldOverride, toggledFileKeys)) return toggledFileKeys;
+  const next = new Set(toggledFileKeys);
+  if (next.has(fileKey)) next.delete(fileKey);
+  else next.add(fileKey);
+  return next;
+}
