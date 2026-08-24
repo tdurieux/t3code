@@ -2,25 +2,28 @@ import type {
   ContextMenuItem as TreeContextMenuItem,
   ContextMenuOpenContext as TreeContextMenuOpenContext,
 } from "@pierre/trees";
+import { useFileTree, useFileTreeSearch } from "@pierre/trees/react";
 import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
-import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { RotateCw } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 
 import { Button } from "~/components/ui/button";
-import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
 import { toastManager } from "~/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useComposerHandleContext } from "~/composerHandleContext";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
-import { useTheme } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
 import { useProjectEntriesQuery } from "./projectFilesQueryState";
+import {
+  WorkspaceFileTree,
+  WORKSPACE_FILE_TREE_UNSAFE_CSS,
+  WorkspaceFileTreeSearchField,
+} from "./WorkspaceFileTree";
 
 interface FileBrowserPanelProps {
   environmentId: EnvironmentId;
@@ -33,18 +36,6 @@ interface FileBrowserPanelProps {
   onOpenFile: (relativePath: string) => void;
   onRefreshSelectedFile?: () => void;
 }
-
-const TREE_UNSAFE_CSS = `
-  :host {
-    --trees-bg-override: transparent;
-    --trees-selected-bg-override: color-mix(in srgb, currentColor 12%, transparent);
-    --trees-hover-bg-override: color-mix(in srgb, currentColor 7%, transparent);
-    --trees-border-color-override: color-mix(in srgb, currentColor 14%, transparent);
-    --trees-font-family-override: var(--font-sans);
-    --trees-font-size-override: 12px;
-  }
-  button[data-type='item'] { border-radius: 5px; }
-`;
 
 function treePath(entry: ProjectEntry): string {
   return entry.kind === "directory" ? `${entry.path}/` : entry.path;
@@ -71,34 +62,6 @@ function RefreshFilesButton(props: { isPending: boolean; onRefresh: () => void }
   );
 }
 
-function FileSearchField(props: {
-  ariaLabel: string;
-  name: string;
-  onClose: () => void;
-  onValueChange: (value: string) => void;
-  value: string;
-}) {
-  return (
-    <InputGroup variant="ghost" className="h-7 min-w-0 flex-1">
-      <InputGroupInput
-        type="search"
-        name={props.name}
-        size="sm"
-        value={props.value}
-        aria-label={props.ariaLabel}
-        placeholder="Search files"
-        spellCheck={false}
-        onChange={(event) => props.onValueChange(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key !== "Escape") return;
-          props.onClose();
-          event.currentTarget.blur();
-        }}
-      />
-    </InputGroup>
-  );
-}
-
 export default function FileBrowserPanel({
   environmentId,
   cwd,
@@ -108,7 +71,6 @@ export default function FileBrowserPanel({
   onOpenFile,
   onRefreshSelectedFile,
 }: FileBrowserPanelProps) {
-  const { resolvedTheme } = useTheme();
   const composerRef = useComposerHandleContext();
   const entriesQuery = useProjectEntriesQuery(environmentId, cwd);
   const entries = entriesQuery.data?.entries ?? [];
@@ -246,7 +208,7 @@ export default function FileBrowserPanel({
     },
     paths: [],
     search: false,
-    unsafeCSS: TREE_UNSAFE_CSS,
+    unsafeCSS: WORKSPACE_FILE_TREE_UNSAFE_CSS,
   });
   const search = useFileTreeSearch(model);
   const handleSearchValueChange = (value: string) => {
@@ -361,7 +323,7 @@ export default function FileBrowserPanel({
         data-surface-subheader
       >
         <RefreshFilesButton isPending={entriesQuery.isPending} onRefresh={handleRefresh} />
-        <FileSearchField
+        <WorkspaceFileTreeSearchField
           name="project-files-search"
           ariaLabel={`Search ${projectName} files`}
           value={search.value}
@@ -372,14 +334,10 @@ export default function FileBrowserPanel({
       {entriesQuery.error && entriesQuery.data === null ? (
         <div className="p-4 text-xs leading-relaxed text-destructive">{entriesQuery.error}</div>
       ) : (
-        <FileTree
+        <WorkspaceFileTree
           model={model}
           aria-label={`${projectName} files`}
           className="min-h-0 flex-1 overflow-hidden"
-          style={{
-            colorScheme: resolvedTheme,
-            ["--trees-fg-override" as string]: "var(--contrast-foreground)",
-          }}
         />
       )}
     </div>

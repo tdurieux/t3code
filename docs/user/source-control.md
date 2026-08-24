@@ -50,8 +50,8 @@ T3 Code works with the platforms your team already uses:
 - Open a pull request and choose **Review** to prepare an isolated checkout without leaving the
   pull request
 - Browse changed files grouped as code, tests, docs, config, and generated files. Use the filter
-  and arrow keys, or press Command-K (Control-K on Windows and Linux) for quick open. The IDE-style
-  tree folds files by folder and lets you resize the file and comments columns
+  and arrow keys, or press Command-K (Control-K on Windows and Linux) for quick open. Review uses
+  the same file explorer as the Files panel and lets you resize the file and comments columns
 - In quick open, use `@` for declarations in the current file, `#` for declarations across the
   checkout, `:` to jump to a line, and `/` to search project text
 - Right-click a file to copy its relative path

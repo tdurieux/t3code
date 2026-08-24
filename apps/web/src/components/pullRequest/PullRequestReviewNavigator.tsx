@@ -1,23 +1,26 @@
+import { useFileTree, useFileTreeSearch } from "@pierre/trees/react";
 import type { EnvironmentId, ProjectContentMatch } from "@t3tools/contracts";
 import {
   BracesIcon,
   CheckCircle2Icon,
-  ChevronDownIcon,
   CircleIcon,
   FileCode2Icon,
-  FolderOpenIcon,
-  SearchIcon,
   TextSearchIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import type { ResizableWidthHandlers } from "~/hooks/useResizableWidth";
 import { useProjectContentSearch, useProjectPathSearch } from "~/state/queries";
-import { cn } from "~/lib/utils";
-import { groupReviewFilesByFolder, reviewFilePathLabel } from "~/reviewFilePath";
+import { reviewFilePathLabel } from "~/reviewFilePath";
+import { T3_PIERRE_ICONS } from "~/pierre-icons";
 
 import { useProjectFileQuery } from "../files/projectFilesQueryState";
+import {
+  WorkspaceFileTree,
+  WORKSPACE_FILE_TREE_UNSAFE_CSS,
+  WorkspaceFileTreeSearchField,
+} from "../files/WorkspaceFileTree";
 import { ReviewColumnResizeHandle } from "../review/ReviewColumnResizeHandle";
 import {
   Command,
@@ -33,9 +36,9 @@ import {
   CommandList,
   CommandPanel,
 } from "../ui/command";
-import { Input } from "../ui/input";
 import { Kbd } from "../ui/kbd";
 import { toastManager } from "../ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   parsePullRequestReviewQuickOpenQuery,
   pullRequestReviewDeclarationQuery,
@@ -79,53 +82,154 @@ export function PullRequestReviewFileSidebar({
   readonly width: number;
   readonly resizeHandlers: ResizableWidthHandlers;
 }) {
-  const [query, setQuery] = useState("");
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set());
   const copyPath = useCopyReviewPath();
-  const visible = useMemo(() => {
-    const words = query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
-    return words.length === 0
-      ? files
-      : files.filter((file) => words.every((word) => file.path.toLocaleLowerCase().includes(word)));
-  }, [files, query]);
-  const groups = useMemo(() => groupPullRequestReviewFiles(visible), [visible]);
-  const navigableFiles = useMemo(
-    () => groups.flatMap((group) => (collapsedGroups.has(group.type) ? [] : group.files)),
-    [collapsedGroups, groups],
+  const groups = useMemo(() => groupPullRequestReviewFiles(files), [files]);
+  const treeFiles = useMemo(
+    () =>
+      groups.flatMap((group) =>
+        group.files.map((file) => ({
+          file,
+          treePath: `${group.label}/${file.path.replace(/^\.\/+/, "").replaceAll("\\", "/")}`,
+        })),
+      ),
+    [groups],
   );
-  const indexByPath = useMemo(
-    () => new Map(navigableFiles.map((file, index) => [file.path, index])),
-    [navigableFiles],
+  const treePaths = useMemo(() => treeFiles.map((entry) => entry.treePath), [treeFiles]);
+  const fileByTreePath = useMemo(
+    () => new Map(treeFiles.map((entry) => [entry.treePath, entry.file] as const)),
+    [treeFiles],
+  );
+  const treePathByFilePath = useMemo(
+    () => new Map(treeFiles.map((entry) => [entry.file.path, entry.treePath] as const)),
+    [treeFiles],
+  );
+  const groupSummaryByTreePath = useMemo(
+    () =>
+      new Map(
+        groups.map(
+          (group) =>
+            [
+              group.label,
+              {
+                count: group.files.length,
+                reviewed: group.files.filter((file) => file.reviewed).length,
+              },
+            ] as const,
+        ),
+      ),
+    [groups],
   );
   const totals = useMemo(
     () =>
-      visible.reduce(
+      files.reduce(
         (total, file) => ({
           additions: total.additions + file.additions,
           deletions: total.deletions + file.deletions,
         }),
         { additions: 0, deletions: 0 },
       ),
-    [visible],
+    [files],
   );
+  const selectedFile = selectedPath ? files.find((file) => file.path === selectedPath) : undefined;
+  const fileByTreePathRef = useRef(fileByTreePath);
+  const groupSummaryByTreePathRef = useRef(groupSummaryByTreePath);
+  const onSelectRef = useRef(onSelect);
+  const copyPathRef = useRef(copyPath);
+  const syncingSelectionRef = useRef(false);
+  const previousTreePathsRef = useRef<readonly string[]>([]);
+  fileByTreePathRef.current = fileByTreePath;
+  groupSummaryByTreePathRef.current = groupSummaryByTreePath;
+  onSelectRef.current = onSelect;
+  copyPathRef.current = copyPath;
 
-  useEffect(() => setActiveIndex(0), [query]);
-
-  const onFilterKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      setActiveIndex((current) => {
-        const offset = event.key === "ArrowDown" ? 1 : -1;
-        return navigableFiles.length === 0
-          ? 0
-          : (current + offset + navigableFiles.length) % navigableFiles.length;
-      });
-    } else if (event.key === "Enter") {
-      const file = navigableFiles[activeIndex];
-      if (file) onSelect(file.path);
+  const { model } = useFileTree({
+    composition: {
+      contextMenu: {
+        triggerMode: "right-click",
+        onOpen: (item, context) => {
+          const file = fileByTreePathRef.current.get(item.path.replace(/\/$/, ""));
+          if (file) copyPathRef.current(file.path, file.path);
+          context.close();
+        },
+      },
+    },
+    density: "compact",
+    fileTreeSearchMode: "hide-non-matches",
+    // Keep the review categories as distinct roots instead of folding them
+    // into the first repository directory.
+    flattenEmptyDirectories: false,
+    initialExpansion: 2,
+    icons: T3_PIERRE_ICONS,
+    onSelectionChange: (selectedPaths) => {
+      if (syncingSelectionRef.current) return;
+      const treePath = selectedPaths.at(-1)?.replace(/\/$/, "");
+      const file = treePath ? fileByTreePathRef.current.get(treePath) : undefined;
+      if (file) onSelectRef.current(file.path);
+    },
+    paths: [],
+    renderRowDecoration: ({ item }) => {
+      const normalizedPath = item.path.replace(/\/$/, "");
+      const file = fileByTreePathRef.current.get(normalizedPath);
+      if (file) {
+        const progress = file.reviewed
+          ? "✓"
+          : file.totalHunks
+            ? `${file.visitedHunks ?? 0}/${file.totalHunks}`
+            : null;
+        const diff = `+${file.additions} −${file.deletions}`;
+        return {
+          text: progress ? `${progress}  ${diff}` : diff,
+          title: `${file.path} · ${progress ? `review ${progress} · ` : ""}${diff}`,
+        };
+      }
+      const summary = groupSummaryByTreePathRef.current.get(normalizedPath);
+      if (!summary) return null;
+      return {
+        text: summary.reviewed === summary.count ? `✓ ${summary.count}` : `${summary.count}`,
+        title: `${summary.reviewed} of ${summary.count} files reviewed`,
+      };
+    },
+    search: false,
+    unsafeCSS: WORKSPACE_FILE_TREE_UNSAFE_CSS,
+  });
+  const search = useFileTreeSearch(model);
+  const handleSearchValueChange = (value: string) => {
+    if (value.trim().length === 0) {
+      search.close();
+      return;
     }
+    search.setValue(value);
   };
+
+  useEffect(() => {
+    if (previousTreePathsRef.current === treePaths) return;
+    previousTreePathsRef.current = treePaths;
+    model.resetPaths(treePaths, {
+      initialExpandedPaths: groups.map((group) => group.label),
+    });
+  }, [groups, model, treePaths]);
+
+  useEffect(() => {
+    if (!selectedPath) return;
+    const treePath = treePathByFilePath.get(selectedPath);
+    if (!treePath || !model.getItem(treePath)) return;
+    if (model.getSelectedPaths().some((path) => path.replace(/\/$/, "") === treePath)) return;
+
+    syncingSelectionRef.current = true;
+    for (const path of model.getSelectedPaths()) model.getItem(path)?.deselect();
+    const segments = treePath.split("/");
+    let ancestorPath = "";
+    for (const segment of segments.slice(0, -1)) {
+      ancestorPath = ancestorPath ? `${ancestorPath}/${segment}` : segment;
+      const item = model.getItem(`${ancestorPath}/`) ?? model.getItem(ancestorPath);
+      if (item && "expand" in item) item.expand();
+    }
+    model.getItem(treePath)?.select();
+    model.scrollToPath(treePath, { focus: true, offset: "nearest" });
+    queueMicrotask(() => {
+      syncingSelectionRef.current = false;
+    });
+  }, [model, selectedPath, treePathByFilePath, treePaths]);
 
   return (
     <aside
@@ -134,172 +238,71 @@ export function PullRequestReviewFileSidebar({
       aria-label="Changed files"
     >
       <ReviewColumnResizeHandle edge="right" handlers={resizeHandlers} />
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-2">
-        <div className="relative min-w-0 flex-1">
-          <SearchIcon className="pointer-events-none absolute top-1/2 left-1 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="h-7 border-0 bg-transparent pr-12 pl-6 text-xs shadow-none focus-visible:ring-0"
-            aria-label="Filter changed files"
-            placeholder="Filter…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={onFilterKeyDown}
+      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border/60 px-2">
+        <div className="flex min-w-0 flex-1 items-center">
+          <WorkspaceFileTreeSearchField
+            name="pull-request-changed-files-search"
+            ariaLabel="Search changed files"
+            placeholder="Search changed files"
+            value={search.value}
+            onValueChange={handleSearchValueChange}
+            onClose={search.close}
           />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  className="shrink-0 rounded px-1 py-0.5 text-[9px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                  onClick={onOpenQuickOpen}
+                />
+              }
+            >
+              <Kbd>⌘K</Kbd>
+            </TooltipTrigger>
+            <TooltipPopup>Open files and symbols</TooltipPopup>
+          </Tooltip>
+        </div>
+        {onSetReviewed ? (
           <button
             type="button"
-            className="absolute top-1/2 right-0 -translate-y-1/2 rounded px-1 py-0.5 text-[9px] text-muted-foreground hover:bg-accent hover:text-foreground"
-            onClick={onOpenQuickOpen}
+            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-35"
+            aria-label={
+              selectedFile?.reviewed
+                ? `Mark ${selectedFile.path} unreviewed`
+                : selectedFile
+                  ? `Mark ${selectedFile.path} reviewed`
+                  : "Select a file to update review progress"
+            }
+            disabled={!selectedFile}
+            onClick={() => {
+              if (selectedFile) onSetReviewed(selectedFile.path, selectedFile.reviewed !== true);
+            }}
           >
-            <Kbd>⌘K</Kbd>
+            {selectedFile?.reviewed ? (
+              <CheckCircle2Icon className="size-3.5 text-emerald-500" />
+            ) : (
+              <CircleIcon className="size-3.5" />
+            )}
           </button>
-        </div>
+        ) : null}
         <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-          {visible.length}
+          {files.length}
         </span>
         <span className="shrink-0 font-mono text-[10px] text-emerald-500">+{totals.additions}</span>
         {totals.deletions > 0 ? (
           <span className="shrink-0 font-mono text-[10px] text-rose-500">−{totals.deletions}</span>
         ) : null}
       </div>
-      <div className="min-h-0 flex-1 overflow-auto py-1" role="listbox" aria-label="Changed files">
-        {groups.map((group) => {
-          const collapsed = collapsedGroups.has(group.type);
-          const reviewed = group.files.filter((file) => file.reviewed).length;
-          const additions = group.files.reduce((total, file) => total + file.additions, 0);
-          const deletions = group.files.reduce((total, file) => total + file.deletions, 0);
-          return (
-            <section key={group.type} aria-labelledby={`review-file-group-${group.type}`}>
-              <button
-                type="button"
-                id={`review-file-group-${group.type}`}
-                className="flex h-8 w-full items-center gap-1.5 px-3 text-left text-[10px] font-medium text-muted-foreground hover:bg-accent/45 hover:text-foreground"
-                aria-expanded={!collapsed}
-                onClick={() =>
-                  setCollapsedGroups((current) => {
-                    const next = new Set(current);
-                    if (next.has(group.type)) next.delete(group.type);
-                    else next.add(group.type);
-                    return next;
-                  })
-                }
-              >
-                <ChevronDownIcon
-                  className={cn("size-3 shrink-0 transition-transform", collapsed && "-rotate-90")}
-                />
-                <span className="min-w-0 flex-1 truncate uppercase tracking-wider">
-                  {group.label}
-                </span>
-                <span className="font-mono text-[9px] text-emerald-600/75">+{additions}</span>
-                {deletions > 0 ? (
-                  <span className="font-mono text-[9px] text-rose-600/75">−{deletions}</span>
-                ) : null}
-                <span className="w-4 text-right font-mono text-[9px]">
-                  {reviewed === group.files.length ? (
-                    <CheckCircle2Icon className="ml-auto size-3 text-emerald-500" />
-                  ) : (
-                    group.files.length
-                  )}
-                </span>
-              </button>
-              {!collapsed
-                ? groupReviewFilesByFolder(group.files).map((folder) => (
-                    <div key={folder.parent || `root:${group.type}`} className="mb-1 last:mb-0">
-                      <div className="mx-3 flex h-6 items-center gap-1.5 px-1 font-mono text-[9px] text-muted-foreground/70">
-                        <FolderOpenIcon className="size-3 shrink-0 text-sky-500/65" />
-                        <span className="min-w-0 flex-1 truncate">
-                          {folder.label || "Repository root"}
-                        </span>
-                        {folder.files.length > 1 ? (
-                          <span className="shrink-0 tabular-nums text-muted-foreground/50">
-                            {folder.files.length}
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="relative ml-5 border-l border-border/45">
-                        {folder.files.map((file) => {
-                          const index = indexByPath.get(file.path) ?? 0;
-                          const label = reviewFilePathLabel(file.path);
-                          const selected = file.path === selectedPath;
-                          return (
-                            <button
-                              key={file.path}
-                              type="button"
-                              role="option"
-                              aria-selected={selected}
-                              aria-label={file.path}
-                              className={cn(
-                                "-ml-px flex h-8 w-[calc(100%+1px)] items-center gap-1.5 border-l-2 border-l-transparent px-2 text-left text-[11px] hover:bg-accent/55",
-                                selected && "border-l-primary bg-accent/75 text-foreground",
-                                !selected && index === activeIndex && "bg-accent/35",
-                              )}
-                              onMouseMove={() => setActiveIndex(index)}
-                              onClick={() => onSelect(file.path)}
-                              onContextMenu={(event) => {
-                                event.preventDefault();
-                                copyPath(file.path, file.path);
-                              }}
-                            >
-                              {onSetReviewed ? (
-                                <span
-                                  role="checkbox"
-                                  aria-label={
-                                    file.reviewed
-                                      ? `Mark ${file.path} unreviewed`
-                                      : `Mark ${file.path} reviewed`
-                                  }
-                                  aria-checked={file.reviewed === true}
-                                  tabIndex={0}
-                                  className="shrink-0 rounded text-muted-foreground hover:text-foreground"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    onSetReviewed(file.path, file.reviewed !== true);
-                                  }}
-                                  onKeyDown={(event) => {
-                                    if (event.key !== "Enter" && event.key !== " ") return;
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    onSetReviewed(file.path, file.reviewed !== true);
-                                  }}
-                                >
-                                  {file.reviewed ? (
-                                    <CheckCircle2Icon className="size-3.5 text-emerald-500" />
-                                  ) : (
-                                    <CircleIcon className="size-3.5" />
-                                  )}
-                                </span>
-                              ) : (
-                                <FileCode2Icon className="size-3.5 shrink-0 text-muted-foreground" />
-                              )}
-                              <span className="min-w-0 flex-1 truncate font-mono font-medium">
-                                {label.name}
-                              </span>
-                              {file.totalHunks ? (
-                                <span className="shrink-0 font-mono text-[9px] tabular-nums text-muted-foreground">
-                                  {file.visitedHunks ?? 0}/{file.totalHunks}
-                                </span>
-                              ) : null}
-                              <span className="shrink-0 font-mono text-[9px] tabular-nums">
-                                <span className="text-emerald-600 dark:text-emerald-400">
-                                  +{file.additions}
-                                </span>{" "}
-                                <span className="text-rose-600 dark:text-rose-400">
-                                  −{file.deletions}
-                                </span>
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))
-                : null}
-            </section>
-          );
-        })}
-        {navigableFiles.length === 0 ? (
-          <p className="px-3 py-6 text-center text-xs text-muted-foreground">No matching files.</p>
-        ) : null}
-      </div>
+      {files.length === 0 ? (
+        <p className="px-3 py-6 text-center text-xs text-muted-foreground">No changed files.</p>
+      ) : (
+        <WorkspaceFileTree
+          model={model}
+          aria-label="Changed files"
+          className="min-h-0 flex-1 overflow-hidden"
+        />
+      )}
     </aside>
   );
 }
