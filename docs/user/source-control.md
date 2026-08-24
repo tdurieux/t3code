@@ -58,8 +58,9 @@ T3 Code works with the platforms your team already uses:
 - Switch between **Changes** and the complete syntax-highlighted **Code** view in the center, and
   jump between the selected file's hunks. Files outside the change can also be opened from quick
   open
-- Read and manage conversations in the right comments panel. Select diff lines to start a
-  conversation or add the selection to an agent
+- Read the pull request description and manage its complete review conversation in the right
+  panel. File-specific review threads remain attached to their diff lines
+- Select diff lines to start a review thread or add the selection to an agent
 - Open **Checks** to inspect reported jobs. GitHub Actions logs open in the review with search,
   refresh, and copy controls; other providers keep their external details link
 - Submit pending comments together, approve the pull request, or request changes from the review

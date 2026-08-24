@@ -91,6 +91,7 @@ import { PullRequestFullFileView } from "./PullRequestFullFileView";
 import { PullRequestReviewChecksPanel } from "./PullRequestReviewChecksPanel";
 import { PullRequestReviewCoveragePanel } from "./PullRequestReviewCoveragePanel";
 import { PullRequestReviewHandoffPanel } from "./PullRequestReviewHandoffPanel";
+import { PullRequestSummaryTab } from "./PullRequestSummaryTab";
 import { PullRequestSemanticPanel } from "./PullRequestSemanticPanel";
 import {
   PullRequestReviewFileSidebar,
@@ -238,6 +239,8 @@ export function PullRequestCodeTab({
   environmentId,
   reference,
   detail,
+  activityPending,
+  activityError,
   selectedCommitOid,
   onSelectedCommitChange,
   pendingFinding,
@@ -252,6 +255,8 @@ export function PullRequestCodeTab({
   environmentId: EnvironmentId;
   reference: PullRequestRef;
   detail: PullRequestDetailView;
+  activityPending: boolean;
+  activityError: string | null;
   /** Commit whose diff is open. Null keeps the whole pull-request diff selected. */
   selectedCommitOid: string | null;
   onSelectedCommitChange: (oid: string | null) => void;
@@ -627,7 +632,7 @@ export function PullRequestCodeTab({
     }
     return placed;
   }, [commit, detail.reviewThreads, files]);
-  const commentsInline = reviewWorkspace === undefined && reviewCommentsVisible;
+  const commentsInline = reviewWorkspace === undefined ? reviewCommentsVisible : true;
 
   const items = useMemo<CodeViewDiffItem<ReviewAnnotationGroup>[]>(
     () =>
@@ -1284,31 +1289,8 @@ export function PullRequestCodeTab({
   );
   const selectedReviewFile = reviewFiles.find((file) => file.path === selectedReviewPath) ?? null;
   const selectedFileHunks = coverage.hunks.filter((hunk) => hunk.path === selectedReviewPath);
-  const selectedReviewThreads = detail.reviewThreads.filter(
-    (thread) => thread.path === selectedReviewPath,
-  );
-  const selectedPendingComments = pendingComments.filter(
-    (comment) => comment.path === selectedReviewPath,
-  );
   const commentsPanelOpen =
     reviewCommentsVisible && !reviewCoverageOpen && !reviewChecksOpen && !reviewHandoffOpen;
-  const openReviewCommentLine = useCallback(
-    (path: string, line: number | null, side: PullRequestDiffSide) => {
-      setSelectedReviewPath(path);
-      setReviewReveal(null);
-      setReviewViewMode("diff");
-      if (line === null) return;
-      const file = files.find((candidate) => resolveFileDiffPath(candidate) === path);
-      if (!file) return;
-      setSelectedLines({
-        id: buildFileDiffRenderKey(file),
-        range: { start: line, end: line, side: toViewerSide(side) },
-      });
-      const hunk = findPullRequestReviewHunk(reviewHunks, { path, line, side });
-      if (progressKey && hunk) setHunkVisited(progressKey, hunk.id, true);
-    },
-    [files, progressKey, reviewHunks, setHunkVisited],
-  );
   /**
    * The same controls the thread diff panel carries, in the same order, minus the
    * ignore-whitespace toggle: that is `git diff -w` on the server, and no host's pull request
@@ -1704,7 +1686,7 @@ export function PullRequestCodeTab({
             }}
           />
         ) : null}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {toolbar}
           {reviewWorkspace && selectedReviewPath ? (
             <div className="shrink-0 border-b border-border/60 bg-background">
@@ -2008,11 +1990,9 @@ export function PullRequestCodeTab({
             </div>
             <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-3">
               <MessageSquareIcon className="size-3.5 text-violet-500" />
-              <h2 className="text-xs font-medium text-foreground">Comments</h2>
+              <h2 className="text-xs font-medium text-foreground">Pull request conversation</h2>
               <span className="rounded bg-accent px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
-                {selectedReviewThreads.length +
-                  selectedPendingComments.length +
-                  (draft?.path === selectedReviewPath ? 1 : 0)}
+                {detail.commentCount}
               </span>
               <Button
                 type="button"
@@ -2025,74 +2005,19 @@ export function PullRequestCodeTab({
                 <XIcon className="size-3.5" />
               </Button>
             </div>
-            {selectedReviewPath ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      className="flex min-h-8 w-full items-center gap-1.5 border-b border-border/40 px-3 text-left font-mono text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
-                      onClick={() => setReviewQuickOpen(true)}
-                    />
-                  }
-                >
-                  <FileCode2Icon className="size-3 shrink-0" />
-                  <span className="truncate">{selectedReviewPath}</span>
-                </TooltipTrigger>
-                <TooltipPopup side="left">{selectedReviewPath}</TooltipPopup>
-              </Tooltip>
-            ) : null}
-            <div className="min-h-0 flex-1 overflow-auto py-2">
-              {selectedReviewThreads.map((thread) => (
-                <section key={thread.id}>
-                  <button
-                    type="button"
-                    className="mx-3 flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
-                    onClick={() => openReviewCommentLine(thread.path, thread.line, thread.side)}
-                  >
-                    <FileCode2Icon className="size-3" />
-                    {thread.line === null ? "File comment" : `Line ${thread.line}`}
-                    {thread.isOutdated ? " · outdated" : ""}
-                  </button>
-                  {renderThreadCard(thread)}
-                </section>
-              ))}
-              {selectedPendingComments.map((comment) => {
-                const anchor = getReviewPositionAnchor(comment.position);
-                return (
-                  <section key={comment.id}>
-                    <button
-                      type="button"
-                      className="mx-3 flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
-                      onClick={() => openReviewCommentLine(comment.path, anchor.line, anchor.side)}
-                    >
-                      <FileCode2Icon className="size-3" />
-                      Line {anchor.line} · pending
-                    </button>
-                    <PendingReviewCommentCard
-                      comment={comment}
-                      onRemove={() => removeComment(reviewKey, comment.id)}
-                    />
-                  </section>
-                );
-              })}
-              {draft?.path === selectedReviewPath ? (
-                <section>
-                  <p className="mx-3 px-1.5 py-1 text-[10px] text-muted-foreground">
-                    Line {getReviewPositionAnchor(draft.position).line} · new comment
-                  </p>
-                  {renderDraftEditor()}
-                </section>
-              ) : null}
-              {selectedReviewThreads.length === 0 &&
-              selectedPendingComments.length === 0 &&
-              draft?.path !== selectedReviewPath ? (
-                <div className="flex h-full min-h-40 flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted-foreground">
-                  <MessageSquareIcon className="size-5 opacity-50" />
-                  <p>No comments on this file.</p>
-                  <p className="text-[10px]">Select a line in Changes to start a conversation.</p>
-                </div>
-              ) : null}
+            <div className="min-h-0 flex-1">
+              <PullRequestSummaryTab
+                content="conversation"
+                environmentId={environmentId}
+                reference={reference}
+                detail={detail}
+                activityPending={activityPending}
+                activityError={activityError}
+                fixFindingLabel={fixFindingLabel}
+                {...(pendingFinding !== undefined ? { pendingFinding } : {})}
+                {...(onFixFinding ? { onFixFinding } : {})}
+                onRefresh={onRefresh}
+              />
             </div>
           </aside>
         ) : null}

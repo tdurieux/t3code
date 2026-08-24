@@ -377,6 +377,7 @@ export function PullRequestSummaryTab({
   detail,
   activityPending,
   activityError,
+  content = "summary",
   pendingFinding,
   fixFindingLabel = "Fix in a thread",
   fixCheckLabel = "Fix",
@@ -388,6 +389,8 @@ export function PullRequestSummaryTab({
   detail: PullRequestDetailView;
   activityPending: boolean;
   activityError: string | null;
+  /** Reuses the description and review conversation without the summary metadata and checks. */
+  content?: "summary" | "conversation";
   /** The hand-off currently preparing, if any, so only the finding it belongs to says so. */
   pendingFinding?: string | null;
   fixFindingLabel?: string;
@@ -515,131 +518,133 @@ export function PullRequestSummaryTab({
 
   return (
     <div className="h-full overflow-y-auto" data-pull-request-summary-scroll>
-      <section className="px-4 py-3">
-        <div>
-          <MetaRow icon={<UsersIcon className="size-3.5" />} label="Reviewers">
-            <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-              {reviewerEntries.length === 0 ? (
-                <span className="text-muted-foreground">None</span>
-              ) : (
-                <span className="flex items-center -space-x-1">
-                  {reviewerEntries.map((entry) => {
-                    const login = entry.actor?.login ?? "ghost";
-                    const named =
-                      entry.actor?.name && entry.actor.name !== login
-                        ? `${entry.actor.name} (@${login})`
-                        : login;
-                    return (
-                      <Tooltip key={entry.key}>
-                        {/* A verdict rides the face that earned it rather than a row of its own:
+      {content === "summary" ? (
+        <section className="px-4 py-3">
+          <div>
+            <MetaRow icon={<UsersIcon className="size-3.5" />} label="Reviewers">
+              <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                {reviewerEntries.length === 0 ? (
+                  <span className="text-muted-foreground">None</span>
+                ) : (
+                  <span className="flex items-center -space-x-1">
+                    {reviewerEntries.map((entry) => {
+                      const login = entry.actor?.login ?? "ghost";
+                      const named =
+                        entry.actor?.name && entry.actor.name !== login
+                          ? `${entry.actor.name} (@${login})`
+                          : login;
+                      return (
+                        <Tooltip key={entry.key}>
+                          {/* A verdict rides the face that earned it rather than a row of its own:
                             the ring sits outside the one that separates overlapping avatars, so
                             it reads at a glance without adding anything to scroll past. */}
-                        <TooltipTrigger
-                          render={
-                            <span
+                          <TooltipTrigger
+                            render={
+                              <span
+                                className={cn(
+                                  "relative rounded-full hover:z-10",
+                                  // The verdict replaces the separator rather than ringing it. Both
+                                  // occupy the same 2px immediately outside a 16px avatar, so the
+                                  // colour costs no size: anything drawn further out would be a
+                                  // halo wide enough to eclipse the neighbour this stack overlaps
+                                  // by 4px. Painted by this wrapper because a child's box-shadow
+                                  // covers its parent's, never the other way round.
+                                  entry.outcome
+                                    ? pullRequestReviewOutcomeRingClassName(
+                                        entry.outcome,
+                                        entry.stale,
+                                      )
+                                    : undefined,
+                                )}
+                              />
+                            }
+                          >
+                            <PullRequestActorLabel
+                              actor={entry.actor}
+                              tooltip={false}
                               className={cn(
-                                "relative rounded-full hover:z-10",
-                                // The verdict replaces the separator rather than ringing it. Both
-                                // occupy the same 2px immediately outside a 16px avatar, so the
-                                // colour costs no size: anything drawn further out would be a
-                                // halo wide enough to eclipse the neighbour this stack overlaps
-                                // by 4px. Painted by this wrapper because a child's box-shadow
-                                // covers its parent's, never the other way round.
+                                "gap-0 [&>span:last-child]:sr-only",
+                                // Only where the wrapper is not already drawing one, or the opaque
+                                // separator would cover the verdict in the band they share.
                                 entry.outcome
-                                  ? pullRequestReviewOutcomeRingClassName(
-                                      entry.outcome,
-                                      entry.stale,
-                                    )
-                                  : undefined,
+                                  ? undefined
+                                  : "[&>img]:ring-2 [&>img]:ring-background [&>span:first-child]:ring-2 [&>span:first-child]:ring-background",
                               )}
                             />
-                          }
-                        >
-                          <PullRequestActorLabel
-                            actor={entry.actor}
-                            tooltip={false}
-                            className={cn(
-                              "gap-0 [&>span:last-child]:sr-only",
-                              // Only where the wrapper is not already drawing one, or the opaque
-                              // separator would cover the verdict in the band they share.
-                              entry.outcome
-                                ? undefined
-                                : "[&>img]:ring-2 [&>img]:ring-background [&>span:first-child]:ring-2 [&>span:first-child]:ring-background",
-                            )}
-                          />
-                          {/* Colour alone says nothing to a reader who cannot see it, and the
+                            {/* Colour alone says nothing to a reader who cannot see it, and the
                               login beside this is already in the accessible name. */}
-                          {entry.outcome ? (
-                            <span className="sr-only">
-                              {entry.stale
-                                ? pullRequestReviewOutcomeStaleLabel(entry.outcome)
-                                : pullRequestReviewOutcomeLabel(entry.outcome)}
-                            </span>
-                          ) : null}
-                        </TooltipTrigger>
-                        <TooltipPopup side="bottom">
-                          {entry.outcome
-                            ? `${named} — ${
-                                entry.stale
+                            {entry.outcome ? (
+                              <span className="sr-only">
+                                {entry.stale
                                   ? pullRequestReviewOutcomeStaleLabel(entry.outcome)
-                                  : pullRequestReviewOutcomeLabel(entry.outcome)
-                              }`
-                            : named}
-                        </TooltipPopup>
-                      </Tooltip>
-                    );
-                  })}
-                </span>
-              )}
-              {/* Shown wherever the host can take a review request at all, and disabled with the
+                                  : pullRequestReviewOutcomeLabel(entry.outcome)}
+                              </span>
+                            ) : null}
+                          </TooltipTrigger>
+                          <TooltipPopup side="bottom">
+                            {entry.outcome
+                              ? `${named} — ${
+                                  entry.stale
+                                    ? pullRequestReviewOutcomeStaleLabel(entry.outcome)
+                                    : pullRequestReviewOutcomeLabel(entry.outcome)
+                                }`
+                              : named}
+                          </TooltipPopup>
+                        </Tooltip>
+                      );
+                    })}
+                  </span>
+                )}
+                {/* Shown wherever the host can take a review request at all, and disabled with the
                   reason where this account may not make one: a control that vanishes teaches
                   nobody why, and "you need write access" is the answer to the question a reader
                   actually has. Azure DevOps is the exception — it takes a reviewer but will not
                   say who could be one, so there is nothing to open. */}
-              {detail.capabilities.reviewers.request &&
-              detail.capabilities.reviewers.listCandidates ? (
-                <PullRequestReviewerPicker
-                  environmentId={environmentId}
-                  reference={reference}
-                  allowed={detail.viewerPermissions.requestReviewers}
-                  onRequested={onRefresh}
-                />
-              ) : null}
-            </span>
-          </MetaRow>
-          {detail.labels.length > 0 ? (
-            <MetaRow icon={<TagIcon className="size-3.5" />} label="Labels">
-              <span className="flex min-w-0 flex-wrap items-center gap-1">
-                {detail.labels.map((label) => {
-                  const dot = labelDotColor(label.color);
-                  return (
-                    <span
-                      key={label.name}
-                      className="inline-flex max-w-48 items-center gap-1.5 rounded-full border border-border/70 bg-muted/40 py-0.5 pl-1.5 pr-2 text-xs"
-                    >
-                      <span
-                        aria-hidden
-                        className="size-2 shrink-0 rounded-full bg-muted-foreground"
-                        {...(dot ? { style: { backgroundColor: dot } } : {})}
-                      />
-                      <span className="truncate">{label.name}</span>
-                    </span>
-                  );
-                })}
+                {detail.capabilities.reviewers.request &&
+                detail.capabilities.reviewers.listCandidates ? (
+                  <PullRequestReviewerPicker
+                    environmentId={environmentId}
+                    reference={reference}
+                    allowed={detail.viewerPermissions.requestReviewers}
+                    onRequested={onRefresh}
+                  />
+                ) : null}
               </span>
             </MetaRow>
-          ) : null}
-          <MetaRow icon={<MessageSquareIcon className="size-3.5" />} label="Comments">
-            {activityPending
-              ? "Loading conversation…"
-              : activityError
-                ? "Conversation unavailable"
-                : detail.commentCount === 1
-                  ? "1 comment"
-                  : `${detail.commentCount} comments`}
-          </MetaRow>
-        </div>
-      </section>
+            {detail.labels.length > 0 ? (
+              <MetaRow icon={<TagIcon className="size-3.5" />} label="Labels">
+                <span className="flex min-w-0 flex-wrap items-center gap-1">
+                  {detail.labels.map((label) => {
+                    const dot = labelDotColor(label.color);
+                    return (
+                      <span
+                        key={label.name}
+                        className="inline-flex max-w-48 items-center gap-1.5 rounded-full border border-border/70 bg-muted/40 py-0.5 pl-1.5 pr-2 text-xs"
+                      >
+                        <span
+                          aria-hidden
+                          className="size-2 shrink-0 rounded-full bg-muted-foreground"
+                          {...(dot ? { style: { backgroundColor: dot } } : {})}
+                        />
+                        <span className="truncate">{label.name}</span>
+                      </span>
+                    );
+                  })}
+                </span>
+              </MetaRow>
+            ) : null}
+            <MetaRow icon={<MessageSquareIcon className="size-3.5" />} label="Comments">
+              {activityPending
+                ? "Loading conversation…"
+                : activityError
+                  ? "Conversation unavailable"
+                  : detail.commentCount === 1
+                    ? "1 comment"
+                    : `${detail.commentCount} comments`}
+            </MetaRow>
+          </div>
+        </section>
+      ) : null}
 
       <Section title="Description">
         <div className="group">
@@ -686,58 +691,60 @@ export function PullRequestSummaryTab({
         </div>
       </Section>
 
-      <Section title="Checks" count={detail.checks.length}>
-        {detail.checks.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No checks reported.</p>
-        ) : (
-          <div className="space-y-0.5">
-            {detail.checks.map((check, index) => {
-              const finding = { kind: "check", check } as const;
-              const failing = check.status === "failure" || check.status === "cancelled";
-              return (
-                <div
-                  // Position too: the host decides how many runs share a name, and a repeated
-                  // key would be a rendering fault on top of whatever the list already says.
-                  key={`${index}:${check.name}:${check.url ?? ""}`}
-                  className="group flex items-center gap-1 rounded-md pr-1 hover:bg-accent/60"
-                >
-                  <button
-                    type="button"
-                    disabled={!check.url}
-                    onClick={() => check.url && openCheck(check.url)}
-                    className={cn(
-                      "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs",
-                      check.url ? undefined : "cursor-default",
-                    )}
+      {content === "summary" ? (
+        <Section title="Checks" count={detail.checks.length}>
+          {detail.checks.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No checks reported.</p>
+          ) : (
+            <div className="space-y-0.5">
+              {detail.checks.map((check, index) => {
+                const finding = { kind: "check", check } as const;
+                const failing = check.status === "failure" || check.status === "cancelled";
+                return (
+                  <div
+                    // Position too: the host decides how many runs share a name, and a repeated
+                    // key would be a rendering fault on top of whatever the list already says.
+                    key={`${index}:${check.name}:${check.url ?? ""}`}
+                    className="group flex items-center gap-1 rounded-md pr-1 hover:bg-accent/60"
                   >
-                    <PullRequestCheckStatusIcon status={check.status} />
-                    <span className="min-w-0 flex-1 truncate">{check.name}</span>
-                    <span className="shrink-0 text-muted-foreground">
-                      {pullRequestCheckStatusLabel(check.status)}
-                    </span>
-                  </button>
-                  {/* Only where there is something to fix. A passing check has no failure to
-                      reproduce, and the button would be an invitation to waste a thread. */}
-                  {onFixFinding && failing ? (
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      className="shrink-0"
-                      disabled={pendingFinding !== null && pendingFinding !== undefined}
-                      onClick={() => onFixFinding(finding)}
+                    <button
+                      type="button"
+                      disabled={!check.url}
+                      onClick={() => check.url && openCheck(check.url)}
+                      className={cn(
+                        "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs",
+                        check.url ? undefined : "cursor-default",
+                      )}
                     >
-                      <HammerIcon className="size-3" />
-                      {pendingFinding === pullRequestFindingKey(finding)
-                        ? "Preparing..."
-                        : fixCheckLabel}
-                    </Button>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Section>
+                      <PullRequestCheckStatusIcon status={check.status} />
+                      <span className="min-w-0 flex-1 truncate">{check.name}</span>
+                      <span className="shrink-0 text-muted-foreground">
+                        {pullRequestCheckStatusLabel(check.status)}
+                      </span>
+                    </button>
+                    {/* Only where there is something to fix. A passing check has no failure to
+                      reproduce, and the button would be an invitation to waste a thread. */}
+                    {onFixFinding && failing ? (
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        className="shrink-0"
+                        disabled={pendingFinding !== null && pendingFinding !== undefined}
+                        onClick={() => onFixFinding(finding)}
+                      >
+                        <HammerIcon className="size-3" />
+                        {pendingFinding === pullRequestFindingKey(finding)
+                          ? "Preparing..."
+                          : fixCheckLabel}
+                      </Button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Section>
+      ) : null}
 
       <Section
         title="Comments"

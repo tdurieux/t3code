@@ -2059,6 +2059,8 @@ export function PullRequestDetailPanel({
                     environmentId={environmentId}
                     reference={reference}
                     detail={detail}
+                    activityPending={activityPending}
+                    activityError={activityError}
                     {...(reviewWorkspace ? { reviewWorkspace } : {})}
                     selectedCommitOid={selectedCodeCommitOid}
                     onSelectedCommitChange={selectCodeCommit}
