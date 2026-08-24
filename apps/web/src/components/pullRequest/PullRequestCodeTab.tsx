@@ -60,6 +60,10 @@ import {
 import { cn } from "~/lib/utils";
 import { createPullRequestDiffFileContentsLoader } from "~/lib/diffFileContents";
 import {
+  isCodeNavigationGesture,
+  isCodeNavigationIdentifier,
+} from "~/components/files/codePointerNavigation";
+import {
   buildDiffReviewComment,
   resolveDiffReviewPosition,
   type ReviewCommentContext,
@@ -71,7 +75,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { DiffPanelLoadingState } from "../DiffPanelShell";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 import { DiffCommentAnnotation } from "../diffs/DiffCommentAnnotation";
-import { StyledDiffCodeView } from "../diffs/StyledDiffCodeView";
+import { StyledDiffCodeView, type StyledDiffCodeViewOptions } from "../diffs/StyledDiffCodeView";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import {
@@ -680,7 +684,7 @@ export function PullRequestCodeTab({
             groupAt(anchor.side, anchor.line).pending.push(comment);
           }
         }
-        if (reviewWorkspace === undefined && draft?.fileKey === fileKey) {
+        if (draft?.fileKey === fileKey) {
           const anchor = getReviewPositionAnchor(draft.position);
           groupAt(anchor.side, anchor.line).draft = true;
         }
@@ -739,7 +743,6 @@ export function PullRequestCodeTab({
       foldOverride,
       pendingComments,
       placedThreadIds,
-      reviewWorkspace,
       toggledFiles,
     ],
   );
@@ -1002,7 +1005,23 @@ export function PullRequestCodeTab({
     [omittedFileStats],
   );
 
-  const diffViewOptions = useMemo(
+  const openSemanticTarget = useCallback(
+    (target: PullRequestSemanticTarget) => {
+      if (!progressKey) return;
+      openNavigation(progressKey, target);
+      setSelectedReviewPath(target.path);
+      setReviewReveal({ path: target.path, line: target.line, column: target.column });
+      setReviewViewMode("file");
+      setSemanticOpen(true);
+      setReviewCoverageOpen(false);
+      setReviewChecksOpen(false);
+      setReviewHandoffOpen(false);
+      setHistoryTarget(null);
+    },
+    [openNavigation, progressKey],
+  );
+
+  const diffViewOptions = useMemo<StyledDiffCodeViewOptions<ReviewAnnotationGroup>>(
     () => ({
       diffStyle: diffRenderMode === "split" ? ("split" as const) : ("unified" as const),
       lineDiffType: "none" as const,
@@ -1019,8 +1038,32 @@ export function PullRequestCodeTab({
       // wired.
       onGutterUtilityClick: beginComment,
       onLineSelectionEnd: beginComment,
+      onTokenClick: (token, event, context) => {
+        if (reviewWorkspace === undefined || !isCodeNavigationGesture(event)) return;
+        if (("side" in token && token.side === "deletions") || context.item.type !== "diff") return;
+        const symbol = token.tokenText.trim();
+        if (!isCodeNavigationIdentifier(symbol)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        openSemanticTarget({
+          path: resolveFileDiffPath(context.item.fileDiff),
+          line: token.lineNumber,
+          column: token.lineCharStart + 1,
+          symbol,
+        });
+      },
     }),
-    [diffRenderMode, wordWrap, resolvedTheme, loadDiffFiles, canSelectLines, draft, beginComment],
+    [
+      beginComment,
+      canSelectLines,
+      diffRenderMode,
+      draft,
+      loadDiffFiles,
+      openSemanticTarget,
+      resolvedTheme,
+      reviewWorkspace,
+      wordWrap,
+    ],
   );
 
   const runThreadCommand = useCallback(
@@ -1268,21 +1311,6 @@ export function PullRequestCodeTab({
     },
     [reviewFiles],
   );
-  const openSemanticTarget = useCallback(
-    (target: PullRequestSemanticTarget) => {
-      if (!progressKey) return;
-      openNavigation(progressKey, target);
-      setSelectedReviewPath(target.path);
-      setReviewReveal({ path: target.path, line: target.line, column: target.column });
-      setReviewViewMode("file");
-      setSemanticOpen(true);
-      setReviewCoverageOpen(false);
-      setReviewChecksOpen(false);
-      setReviewHandoffOpen(false);
-      setHistoryTarget(null);
-    },
-    [openNavigation, progressKey],
-  );
   useEffect(() => {
     const target = navigation.target;
     if (!target) return;
@@ -1308,6 +1336,36 @@ export function PullRequestCodeTab({
   );
   const selectedReviewFile = reviewFiles.find((file) => file.path === selectedReviewPath) ?? null;
   const selectedFileHunks = coverage.hunks.filter((hunk) => hunk.path === selectedReviewPath);
+  const fullFileReviewPosition = useCallback(
+    (path: string, line: number) => {
+      const file = files.find((candidate) => resolveFileDiffPath(candidate) === path);
+      if (!file) return null;
+      const position = resolveDiffReviewPosition(file, line, "additions");
+      return position ? { file, position } : null;
+    },
+    [files],
+  );
+  const canAddFullFileReviewComment = useCallback(
+    (path: string, line: number) =>
+      canCommentOnLines && fullFileReviewPosition(path, line) !== null,
+    [canCommentOnLines, fullFileReviewPosition],
+  );
+  const addFullFileReviewComment = useCallback(
+    (path: string, line: number, body: string) => {
+      if (!canCommentOnLines) return;
+      const resolved = fullFileReviewPosition(path, line);
+      if (!resolved) return;
+      const previousPath = resolveFileDiffPreviousPath(resolved.file);
+      addComment(reviewKey, {
+        id: nextPendingReviewCommentId(),
+        path,
+        ...(previousPath === path ? {} : { oldPath: previousPath }),
+        position: resolved.position,
+        body,
+      });
+    },
+    [addComment, canCommentOnLines, fullFileReviewPosition, reviewKey],
+  );
   const commentsPanelOpen =
     reviewCommentsVisible && !reviewCoverageOpen && !reviewChecksOpen && !reviewHandoffOpen;
   /**
@@ -1892,6 +1950,13 @@ export function PullRequestCodeTab({
                 path={selectedReviewPath}
                 revealLine={reviewReveal?.path === selectedReviewPath ? reviewReveal.line : null}
                 onOpenSymbol={openSemanticTarget}
+                canAddReviewComment={(line) =>
+                  canAddFullFileReviewComment(selectedReviewPath, line)
+                }
+                onAddReviewComment={({ line, body }) =>
+                  addFullFileReviewComment(selectedReviewPath, line, body)
+                }
+                {...(onAddToAgentSelection ? { onAskAgentSelection: onAddToAgentSelection } : {})}
               />
             ) : (
               <StyledDiffCodeView<ReviewAnnotationGroup>
