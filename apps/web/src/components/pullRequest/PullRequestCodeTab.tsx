@@ -99,7 +99,6 @@ import {
   type PullRequestReviewFileEntry,
 } from "./PullRequestReviewNavigator";
 import {
-  expandFileDiff,
   isFileDiffCollapsed,
   isLineInFileDiff,
   type DiffFoldOverride,
@@ -1237,15 +1236,6 @@ export function PullRequestCodeTab({
     }
   }, [commit, onSelectedCommitChange, selectedCommit]);
   const scopeLabel = selectedCommit ? selectedCommit.messageHeadline : "All commits";
-  const revealReviewDiffPath = useCallback(
-    (path: string) => {
-      const file = files.find((candidate) => resolveFileDiffPath(candidate) === path);
-      if (!file) return;
-      const fileKey = buildFileDiffRenderKey(file);
-      setToggledFiles((current) => expandFileDiff(fileKey, foldOverride, current));
-    },
-    [files, foldOverride],
-  );
   const selectReviewPath = useCallback(
     (path: string, line?: number, column?: number) => {
       setSelectedReviewPath(path);
@@ -1256,10 +1246,9 @@ export function PullRequestCodeTab({
         return;
       }
       setReviewReveal(null);
-      revealReviewDiffPath(path);
       if (!reviewFiles.some((file) => file.path === path)) setReviewViewMode("file");
     },
-    [revealReviewDiffPath, reviewFiles],
+    [reviewFiles],
   );
   const openSemanticTarget = useCallback(
     (target: PullRequestSemanticTarget) => {
@@ -1283,10 +1272,6 @@ export function PullRequestCodeTab({
     setReviewReveal({ path: target.path, line: target.line, column: target.column });
     setReviewViewMode("file");
   }, [navigation.target]);
-  useEffect(() => {
-    if (reviewWorkspace === undefined || reviewViewMode !== "diff" || !selectedReviewPath) return;
-    revealReviewDiffPath(selectedReviewPath);
-  }, [revealReviewDiffPath, reviewViewMode, reviewWorkspace, selectedReviewPath]);
   const openCoverageHunk = useCallback(
     (hunk: PullRequestReviewHunk) => {
       if (progressKey) setHunkVisited(progressKey, hunk.id, true);
@@ -1294,7 +1279,6 @@ export function PullRequestCodeTab({
       setReviewViewMode("diff");
       setReviewChecksOpen(false);
       setHistoryTarget(null);
-      revealReviewDiffPath(hunk.path);
       const file = files.find((candidate) => resolveFileDiffPath(candidate) === hunk.path);
       if (!file) return;
       setSelectedLines({
@@ -1302,7 +1286,7 @@ export function PullRequestCodeTab({
         range: { start: hunk.startLine, end: hunk.startLine, side: "additions" },
       });
     },
-    [files, progressKey, revealReviewDiffPath, setHunkVisited],
+    [files, progressKey, setHunkVisited],
   );
   const selectedReviewFile = reviewFiles.find((file) => file.path === selectedReviewPath) ?? null;
   const selectedFileHunks = coverage.hunks.filter((hunk) => hunk.path === selectedReviewPath);

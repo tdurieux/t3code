@@ -1,7 +1,7 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { describe, expect, it } from "vite-plus/test";
 
-import { expandFileDiff, isFileDiffCollapsed, isLineInFileDiff } from "./pullRequestDiff.logic";
+import { isFileDiffCollapsed, isLineInFileDiff } from "./pullRequestDiff.logic";
 
 /** Only the hunk ranges matter here; the viewer fills the rest in when it renders. */
 function fileWithHunks(
@@ -77,23 +77,5 @@ describe("isFileDiffCollapsed", () => {
   it("still answers to a toggle after either toolbar press", () => {
     expect(isFileDiffCollapsed("a.ts", "expanded", new Set(["a.ts"]))).toBe(true);
     expect(isFileDiffCollapsed("a.ts", "folded", new Set(["a.ts"]))).toBe(false);
-  });
-});
-
-describe("expandFileDiff", () => {
-  it("opens a default-folded file without opening its neighbours", () => {
-    const toggles = expandFileDiff("a.ts", null, new Set());
-    expect(isFileDiffCollapsed("a.ts", null, toggles)).toBe(false);
-    expect(isFileDiffCollapsed("b.ts", null, toggles)).toBe(true);
-  });
-
-  it("removes the fold toggle when the toolbar default is expanded", () => {
-    const toggles = expandFileDiff("a.ts", "expanded", new Set(["a.ts"]));
-    expect(isFileDiffCollapsed("a.ts", "expanded", toggles)).toBe(false);
-  });
-
-  it("preserves the set when the target is already visible", () => {
-    const toggles = new Set(["a.ts"]);
-    expect(expandFileDiff("a.ts", null, toggles)).toBe(toggles);
   });
 });
