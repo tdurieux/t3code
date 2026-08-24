@@ -101,6 +101,7 @@ import {
 import {
   isFileDiffCollapsed,
   isLineInFileDiff,
+  resolvePullRequestLineSelectionActions,
   type DiffFoldOverride,
 } from "./pullRequestDiff.logic";
 import {
@@ -483,11 +484,18 @@ export function PullRequestCodeTab({
       verdicts: hostReview.verdicts.filter((verdict) => viewer.verdicts.includes(verdict)),
     };
   }, [detail.capabilities.review, detail.viewerPermissions]);
-  // A comment is posted against the pull request's head diff, so a line number taken from one
-  // commit's own diff would land somewhere else entirely. Commenting waits for the whole change.
-  const canCommentOnLines = review.inlineComment && commit === null;
-  const canInspectLineHistory = reviewWorkspace !== undefined && commit === null;
-  const canSelectLines = canCommentOnLines || canInspectLineHistory;
+  // Host comments and local history belong to the pull request's head diff. An agent question
+  // only carries the selected patch, so it also works in a single commit and needs no host grant.
+  const lineSelectionActions = resolvePullRequestLineSelectionActions({
+    isWholePullRequest: commit === null,
+    canInlineComment: review.inlineComment,
+    canInspectHistory: reviewWorkspace !== undefined,
+    canAskAgent: onAddToAgentSelection !== undefined,
+  });
+  const canCommentOnLines = lineSelectionActions.comment;
+  const canInspectLineHistory = lineSelectionActions.history;
+  const canAskAgentAboutLines = lineSelectionActions.agent;
+  const canSelectLines = lineSelectionActions.select;
   // Every slice is parsed on its own and the result held, so a slice arriving costs one parse
   // rather than one per slice already on screen. Its cache key carries the theme, which is what
   // the tokenizer caches against, so a theme change is still a fresh parse.
@@ -859,8 +867,8 @@ export function PullRequestCodeTab({
           });
         }
       }
-      if (!canCommentOnLines) return;
-      if (reviewWorkspace) {
+      if (!canCommentOnLines && !canAskAgentAboutLines) return;
+      if (canCommentOnLines && reviewWorkspace) {
         setReviewCommentsVisible(true);
         setReviewCoverageOpen(false);
         setReviewChecksOpen(false);
@@ -875,6 +883,7 @@ export function PullRequestCodeTab({
       });
     },
     [
+      canAskAgentAboutLines,
       canCommentOnLines,
       canInspectLineHistory,
       canSelectLines,
@@ -1121,8 +1130,9 @@ export function PullRequestCodeTab({
           kind="draft"
           rangeLabel={`${draft.path}:${getReviewPositionAnchor(draft.position).line}`}
           text=""
-          submitLabel="Add to review"
-          {...(onAddToAgentSelection
+          placeholder={canCommentOnLines ? "Add a review comment…" : "Ask about these lines…"}
+          submitLabel={canCommentOnLines ? "Add to review" : "Ask agent"}
+          {...(canCommentOnLines && onAddToAgentSelection
             ? {
                 secondaryAction: {
                   label: "Add to agent",
@@ -1138,6 +1148,14 @@ export function PullRequestCodeTab({
             setSelectedLines(null);
           }}
           onComment={(body) => {
+            if (!canCommentOnLines) {
+              if (onAddToAgentSelection) {
+                finishSelection(draft, body, (comment) =>
+                  onAddToAgentSelection({ comment, request: body }),
+                );
+              }
+              return;
+            }
             addComment(reviewKey, {
               id: nextPendingReviewCommentId(),
               path: draft.path,
@@ -1150,7 +1168,7 @@ export function PullRequestCodeTab({
           }}
         />
       ) : null,
-    [addComment, draft, finishSelection, onAddToAgentSelection, reviewKey],
+    [addComment, canCommentOnLines, draft, finishSelection, onAddToAgentSelection, reviewKey],
   );
   const renderAnnotation = useCallback(
     (annotation: ReviewAnnotation) => (

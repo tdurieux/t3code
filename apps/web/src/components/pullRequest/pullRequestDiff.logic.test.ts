@@ -1,7 +1,11 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { describe, expect, it } from "vite-plus/test";
 
-import { isFileDiffCollapsed, isLineInFileDiff } from "./pullRequestDiff.logic";
+import {
+  isFileDiffCollapsed,
+  isLineInFileDiff,
+  resolvePullRequestLineSelectionActions,
+} from "./pullRequestDiff.logic";
 
 /** Only the hunk ranges matter here; the viewer fills the rest in when it renders. */
 function fileWithHunks(
@@ -77,5 +81,40 @@ describe("isFileDiffCollapsed", () => {
   it("still answers to a toggle after either toolbar press", () => {
     expect(isFileDiffCollapsed("a.ts", "expanded", new Set(["a.ts"]))).toBe(true);
     expect(isFileDiffCollapsed("a.ts", "folded", new Set(["a.ts"]))).toBe(false);
+  });
+});
+
+describe("resolvePullRequestLineSelectionActions", () => {
+  it("keeps agent questions available without host comment permission", () => {
+    expect(
+      resolvePullRequestLineSelectionActions({
+        isWholePullRequest: true,
+        canInlineComment: false,
+        canInspectHistory: true,
+        canAskAgent: true,
+      }),
+    ).toEqual({ comment: false, history: true, agent: true, select: true });
+  });
+
+  it("allows agent questions from a commit diff without offering host actions", () => {
+    expect(
+      resolvePullRequestLineSelectionActions({
+        isWholePullRequest: false,
+        canInlineComment: true,
+        canInspectHistory: true,
+        canAskAgent: true,
+      }),
+    ).toEqual({ comment: false, history: false, agent: true, select: true });
+  });
+
+  it("disables selection when no line action is available", () => {
+    expect(
+      resolvePullRequestLineSelectionActions({
+        isWholePullRequest: true,
+        canInlineComment: false,
+        canInspectHistory: false,
+        canAskAgent: false,
+      }),
+    ).toEqual({ comment: false, history: false, agent: false, select: false });
   });
 });

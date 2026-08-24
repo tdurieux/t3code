@@ -24,6 +24,23 @@ export function isLineInFileDiff(
 /** What the toolbar last asked of every file at once, null being the reader asking nothing yet. */
 export type DiffFoldOverride = "expanded" | "folded" | null;
 
+export function resolvePullRequestLineSelectionActions(input: {
+  readonly isWholePullRequest: boolean;
+  readonly canInlineComment: boolean;
+  readonly canInspectHistory: boolean;
+  readonly canAskAgent: boolean;
+}) {
+  const comment = input.isWholePullRequest && input.canInlineComment;
+  const history = input.isWholePullRequest && input.canInspectHistory;
+  const agent = input.canAskAgent;
+  return {
+    comment,
+    history,
+    agent,
+    select: comment || history || agent,
+  };
+}
+
 /**
  * Whether a file is drawn folded.
  *
