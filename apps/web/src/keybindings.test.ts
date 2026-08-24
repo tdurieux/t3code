@@ -140,6 +140,16 @@ const DEFAULT_BINDINGS = compile([
   { shortcut: modShortcut("o", { shiftKey: true }), command: "chat.new" },
   { shortcut: modShortcut("n", { shiftKey: true }), command: "chat.newLocal" },
   { shortcut: modShortcut("o"), command: "editor.openFavorite" },
+  {
+    shortcut: { ...modShortcut("["), modKey: false },
+    command: "review.change.previous",
+    whenAst: whenIdentifier("reviewFocus"),
+  },
+  {
+    shortcut: { ...modShortcut("]"), modKey: false },
+    command: "review.change.next",
+    whenAst: whenIdentifier("reviewFocus"),
+  },
   { shortcut: modShortcut("[", { shiftKey: true }), command: "thread.previous" },
   { shortcut: modShortcut("]", { shiftKey: true }), command: "thread.next" },
   {
@@ -756,6 +766,24 @@ describe("resolveShortcutCommand", () => {
         },
       ),
       "thread.next",
+    );
+  });
+
+  it("scopes hunk navigation shortcuts to review mode", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "]", code: "BracketRight" }), DEFAULT_BINDINGS, {
+        context: { reviewFocus: true },
+      }),
+      "review.change.next",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "[", code: "BracketLeft" }), DEFAULT_BINDINGS, {
+        context: { reviewFocus: true },
+      }),
+      "review.change.previous",
+    );
+    assert.isNull(
+      resolveShortcutCommand(event({ key: "]", code: "BracketRight" }), DEFAULT_BINDINGS),
     );
   });
 

@@ -14,6 +14,7 @@ import {
   BotIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  ChevronUpIcon,
   ChevronsDownUpIcon,
   ChevronsUpDownIcon,
   Columns2Icon,
@@ -29,7 +30,7 @@ import {
   TriangleAlertIcon,
   XIcon,
 } from "lucide-react";
-import { useAtomRefresh } from "@effect/atom-react";
+import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
   useCallback,
   useEffect,
@@ -58,6 +59,7 @@ import {
   type RenderablePatch,
 } from "~/lib/diffRendering";
 import { cn } from "~/lib/utils";
+import { resolveShortcutCommand, shortcutLabelForCommand } from "~/keybindings";
 import { createPullRequestDiffFileContentsLoader } from "~/lib/diffFileContents";
 import {
   isCodeNavigationGesture,
@@ -70,6 +72,7 @@ import {
 } from "~/reviewCommentContext";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
+import { primaryServerKeybindingsAtom } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { DiffPanelLoadingState } from "../DiffPanelShell";
@@ -77,6 +80,7 @@ import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 import { DiffCommentAnnotation } from "../diffs/DiffCommentAnnotation";
 import { StyledDiffCodeView, type StyledDiffCodeViewOptions } from "../diffs/StyledDiffCodeView";
 import { Button } from "../ui/button";
+import { Kbd } from "../ui/kbd";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import {
   DropdownMenu,
@@ -109,6 +113,7 @@ import {
   type DiffFoldOverride,
 } from "./pullRequestDiff.logic";
 import {
+  adjacentPullRequestReviewHunk,
   buildPullRequestReviewCoverage,
   buildPullRequestReviewHunks,
   findPullRequestReviewHunk,
@@ -281,6 +286,8 @@ export function PullRequestCodeTab({
 }) {
   const { resolvedTheme } = useTheme();
   const settings = useClientSettings();
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const reviewRootRef = useRef<HTMLDivElement>(null);
   const [toggledFiles, setToggledFiles] = useState<ReadonlySet<string>>(() => new Set());
   // A change of any size can carry hundreds of commits, and a menu that long is a scroll rather
   // than a choice. The rest arrive ten at a time, on request.
@@ -1336,6 +1343,63 @@ export function PullRequestCodeTab({
   );
   const selectedReviewFile = reviewFiles.find((file) => file.path === selectedReviewPath) ?? null;
   const selectedFileHunks = coverage.hunks.filter((hunk) => hunk.path === selectedReviewPath);
+  const selectedDiffFile = files.find(
+    (candidate) => resolveFileDiffPath(candidate) === selectedReviewPath,
+  );
+  const selectedDiffFileKey = selectedDiffFile ? buildFileDiffRenderKey(selectedDiffFile) : null;
+  const adjacentHunks = useMemo(() => {
+    const position = selectedReviewPath
+      ? {
+          path: selectedReviewPath,
+          ...(selectedLines?.id === selectedDiffFileKey
+            ? {
+                line: selectedLines.range.start,
+                side:
+                  selectedLines.range.side === "deletions" ? ("left" as const) : ("right" as const),
+              }
+            : {}),
+        }
+      : null;
+    return {
+      previous: adjacentPullRequestReviewHunk(coverage.hunks, position, "previous"),
+      next: adjacentPullRequestReviewHunk(coverage.hunks, position, "next"),
+    };
+  }, [coverage.hunks, selectedDiffFileKey, selectedLines, selectedReviewPath]);
+  const navigateReviewHunk = useCallback(
+    (direction: "previous" | "next") => {
+      const hunk = adjacentHunks[direction];
+      if (hunk) openCoverageHunk(hunk);
+    },
+    [adjacentHunks, openCoverageHunk],
+  );
+  const previousHunkShortcut = shortcutLabelForCommand(keybindings, "review.change.previous", {
+    context: { reviewFocus: true },
+  });
+  const nextHunkShortcut = shortcutLabelForCommand(keybindings, "review.change.next", {
+    context: { reviewFocus: true },
+  });
+  useEffect(() => {
+    if (reviewWorkspace === undefined) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!reviewRootRef.current || reviewRootRef.current.getClientRects().length === 0) return;
+      const interactive = event
+        .composedPath()
+        .some(
+          (target) =>
+            target instanceof HTMLElement &&
+            target.matches('input, textarea, select, [contenteditable="true"]'),
+        );
+      if (interactive || document.querySelector('[role="dialog"]')) return;
+      const command = resolveShortcutCommand(event, keybindings, {
+        context: { reviewFocus: true },
+      });
+      if (command !== "review.change.previous" && command !== "review.change.next") return;
+      event.preventDefault();
+      navigateReviewHunk(command === "review.change.next" ? "next" : "previous");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [keybindings, navigateReviewHunk, reviewWorkspace]);
   const fullFileReviewPosition = useCallback(
     (path: string, line: number) => {
       const file = files.find((candidate) => resolveFileDiffPath(candidate) === path);
@@ -1749,7 +1813,7 @@ export function PullRequestCodeTab({
 
   return (
     <DiffWorkerPoolProvider>
-      <div className="flex h-full min-h-0 flex-col lg:flex-row">
+      <div ref={reviewRootRef} className="flex h-full min-h-0 flex-col lg:flex-row">
         {reviewWorkspace ? (
           <PullRequestReviewFileSidebar
             files={reviewFiles}
@@ -1825,6 +1889,41 @@ export function PullRequestCodeTab({
               </div>
               {reviewViewMode === "diff" && selectedFileHunks.length > 0 ? (
                 <div className="flex gap-1 overflow-x-auto border-t border-border/40 px-2 py-1.5">
+                  <div
+                    className="flex shrink-0 items-center gap-0.5 border-r border-border/50 pr-1"
+                    aria-label="Change chunk navigation"
+                  >
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      aria-label="Previous change chunk"
+                      title={`Previous change chunk${previousHunkShortcut ? ` (${previousHunkShortcut})` : ""}`}
+                      disabled={!adjacentHunks.previous}
+                      onClick={() => navigateReviewHunk("previous")}
+                    >
+                      <ChevronUpIcon className="size-3" />
+                    </Button>
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      aria-label="Next change chunk"
+                      title={`Next change chunk${nextHunkShortcut ? ` (${nextHunkShortcut})` : ""}`}
+                      disabled={!adjacentHunks.next}
+                      onClick={() => navigateReviewHunk("next")}
+                    >
+                      <ChevronDownIcon className="size-3" />
+                    </Button>
+                    {previousHunkShortcut ? (
+                      <Kbd className="ml-1 hidden h-4 min-w-4 rounded-sm px-1 text-[9px] sm:flex">
+                        {previousHunkShortcut}
+                      </Kbd>
+                    ) : null}
+                    {nextHunkShortcut ? (
+                      <Kbd className="hidden h-4 min-w-4 rounded-sm px-1 text-[9px] sm:flex">
+                        {nextHunkShortcut}
+                      </Kbd>
+                    ) : null}
+                  </div>
                   {selectedFileHunks.map((hunk) => (
                     <button
                       key={hunk.id}

@@ -93,6 +93,56 @@ export function findPullRequestReviewHunk(
   );
 }
 
+export function adjacentPullRequestReviewHunk(
+  hunks: ReadonlyArray<PullRequestReviewHunk>,
+  position: {
+    readonly path: string;
+    readonly line?: number;
+    readonly side?: "left" | "right";
+  } | null,
+  direction: "previous" | "next",
+): PullRequestReviewHunk | null {
+  if (hunks.length === 0) return null;
+  if (!position) return direction === "next" ? hunks[0]! : hunks.at(-1)!;
+
+  const sameFileIndexes = hunks.flatMap((hunk, index) =>
+    hunk.path === position.path ? [index] : [],
+  );
+  if (sameFileIndexes.length === 0) {
+    return direction === "next" ? hunks[0]! : hunks.at(-1)!;
+  }
+
+  if (position.line === undefined) {
+    const index = direction === "next" ? sameFileIndexes[0]! : sameFileIndexes.at(-1)!;
+    return hunks[index] ?? null;
+  }
+
+  const line = position.line;
+  const side = position.side ?? "right";
+  const start = (hunk: PullRequestReviewHunk) =>
+    side === "left" ? hunk.oldStartLine : hunk.startLine;
+  const end = (hunk: PullRequestReviewHunk) => (side === "left" ? hunk.oldEndLine : hunk.endLine);
+  const currentIndex = sameFileIndexes.find((index) => {
+    const hunk = hunks[index]!;
+    return line >= start(hunk) && line <= end(hunk);
+  });
+  if (currentIndex !== undefined) {
+    return hunks[currentIndex + (direction === "next" ? 1 : -1)] ?? null;
+  }
+
+  if (direction === "next") {
+    const nextInFile = sameFileIndexes.find((index) => start(hunks[index]!) > line);
+    return nextInFile === undefined
+      ? (hunks[sameFileIndexes.at(-1)! + 1] ?? null)
+      : hunks[nextInFile]!;
+  }
+
+  const previousInFile = sameFileIndexes.findLast((index) => end(hunks[index]!) < line);
+  return previousInFile === undefined
+    ? (hunks[sameFileIndexes[0]! - 1] ?? null)
+    : hunks[previousInFile]!;
+}
+
 export function buildPullRequestReviewCoverage(input: {
   readonly hunks: ReadonlyArray<PullRequestReviewHunk>;
   readonly filePaths: ReadonlyArray<string>;

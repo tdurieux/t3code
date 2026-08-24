@@ -2,6 +2,7 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  adjacentPullRequestReviewHunk,
   buildPullRequestReviewCoverage,
   buildPullRequestReviewHunks,
   findPullRequestReviewHunk,
@@ -62,5 +63,58 @@ describe("pull request review progress", () => {
         reviewedFilePaths: new Set(["src/app.ts"]),
       }),
     ).toMatchObject({ visitedHunks: 1, totalHunks: 1, reviewedFiles: 1, totalFiles: 1 });
+  });
+
+  it("moves between hunks in visible file order without wrapping", () => {
+    const hunks = buildPullRequestReviewHunks([
+      {
+        name: "src/first.ts",
+        hunks: [
+          {
+            additionStart: 10,
+            additionCount: 2,
+            deletionStart: 10,
+            deletionCount: 1,
+            additionLines: 2,
+            deletionLines: 1,
+          },
+          {
+            additionStart: 30,
+            additionCount: 3,
+            deletionStart: 29,
+            deletionCount: 2,
+            additionLines: 2,
+            deletionLines: 1,
+          },
+        ],
+      },
+      {
+        name: "src/second.ts",
+        hunks: [
+          {
+            additionStart: 5,
+            additionCount: 1,
+            deletionStart: 5,
+            deletionCount: 1,
+            additionLines: 1,
+            deletionLines: 1,
+          },
+        ],
+      },
+    ] as unknown as ReadonlyArray<FileDiffMetadata>);
+
+    expect(
+      adjacentPullRequestReviewHunk(hunks, { path: "src/first.ts", line: 10 }, "next")?.path,
+    ).toBe("src/first.ts");
+    expect(
+      adjacentPullRequestReviewHunk(hunks, { path: "src/first.ts", line: 30 }, "next")?.path,
+    ).toBe("src/second.ts");
+    expect(
+      adjacentPullRequestReviewHunk(hunks, { path: "src/second.ts", line: 5 }, "previous")
+        ?.startLine,
+    ).toBe(30);
+    expect(
+      adjacentPullRequestReviewHunk(hunks, { path: "src/second.ts", line: 5 }, "next"),
+    ).toBeNull();
   });
 });
