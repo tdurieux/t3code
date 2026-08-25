@@ -1,4 +1,5 @@
 import { CheckCircle2Icon, CircleDashedIcon, EyeIcon, RotateCcwIcon, XIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { Button } from "../ui/button";
 import { cn } from "~/lib/utils";
@@ -8,12 +9,14 @@ import type {
 } from "./pullRequestReviewProgress.logic";
 
 export function PullRequestReviewCoveragePanel({
+  navigation,
   coverage,
   onClose,
   onOpenHunk,
   onSetHunkVisited,
   onClear,
 }: {
+  readonly navigation?: ReactNode;
   readonly coverage: PullRequestReviewCoverage;
   readonly onClose: () => void;
   readonly onOpenHunk: (hunk: PullRequestReviewHunk) => void;
@@ -24,6 +27,7 @@ export function PullRequestReviewCoveragePanel({
     coverage.totalHunks === 0 ? 0 : Math.round((coverage.visitedHunks / coverage.totalHunks) * 100);
   return (
     <aside className="flex min-h-0 w-80 shrink-0 flex-col border-l border-border/60 bg-background">
+      {navigation}
       <header className="shrink-0 border-b border-border/60 p-3">
         <div className="flex items-start gap-2">
           <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-violet-500/25 bg-violet-500/10">

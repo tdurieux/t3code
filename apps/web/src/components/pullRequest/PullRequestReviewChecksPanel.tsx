@@ -9,7 +9,7 @@ import {
   SearchIcon,
   XIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { readLocalApi } from "~/localApi";
@@ -32,6 +32,7 @@ function openExternal(url: string): void {
 }
 
 export function PullRequestReviewChecksPanel({
+  navigation,
   environmentId,
   cwd,
   checks,
@@ -39,6 +40,7 @@ export function PullRequestReviewChecksPanel({
   onToggleEvidence,
   onClose,
 }: {
+  readonly navigation?: ReactNode;
   readonly environmentId: EnvironmentId;
   readonly cwd: string;
   readonly checks: ReadonlyArray<PullRequestCheck>;
@@ -81,6 +83,7 @@ export function PullRequestReviewChecksPanel({
 
   return (
     <aside className="flex min-h-0 w-full shrink-0 flex-col border-t border-border/60 bg-background lg:w-96 lg:border-l lg:border-t-0">
+      {navigation}
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-2">
         {selected ? (
           <Button

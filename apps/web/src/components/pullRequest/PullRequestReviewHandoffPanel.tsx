@@ -8,7 +8,7 @@ import {
   Trash2Icon,
   XIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
@@ -22,6 +22,7 @@ const DEFAULT_REVIEW_REQUEST =
   "Review the remaining changes. Prioritize correctness risks, missing tests, unresolved CI evidence, and concrete blockers to approval.";
 
 export function PullRequestReviewHandoffPanel({
+  navigation,
   detail,
   revision,
   coverage,
@@ -34,6 +35,7 @@ export function PullRequestReviewHandoffPanel({
   onStartConversation,
   onClose,
 }: {
+  readonly navigation?: ReactNode;
   readonly detail: PullRequestDetailView;
   readonly revision: string;
   readonly coverage: PullRequestReviewCoverage;
@@ -67,6 +69,7 @@ export function PullRequestReviewHandoffPanel({
 
   return (
     <aside className="flex min-h-0 w-96 shrink-0 flex-col border-l border-border/60 bg-background">
+      {navigation}
       <header className="shrink-0 border-b border-border/60 p-3">
         <div className="flex items-start gap-2">
           <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-violet-500/25 bg-violet-500/10">

@@ -61,6 +61,7 @@ import {
 import { cn } from "~/lib/utils";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "~/keybindings";
 import { createPullRequestDiffFileContentsLoader } from "~/lib/diffFileContents";
+import { reviewFilePathLabel } from "~/reviewFilePath";
 import {
   isCodeNavigationGesture,
   isCodeNavigationIdentifier,
@@ -327,6 +328,8 @@ export function PullRequestCodeTab({
   });
   const [reviewViewMode, setReviewViewMode] = useState<"diff" | "file">("diff");
   const [selectedReviewPath, setSelectedReviewPath] = useState<string | null>(null);
+  const [openReviewPaths, setOpenReviewPaths] = useState<ReadonlyArray<string>>([]);
+  const autoOpenedReviewKeyRef = useRef<string | null>(null);
   const [reviewReveal, setReviewReveal] = useState<{
     readonly path: string;
     readonly line: number;
@@ -363,6 +366,8 @@ export function PullRequestCodeTab({
     setOrphansOpen(false);
     setSliceState({ key: scopeKey, cursor: null, slices: NO_SLICES });
     setSelectedReviewPath(null);
+    setOpenReviewPaths([]);
+    autoOpenedReviewKeyRef.current = null;
     setReviewViewMode("diff");
     setReviewReveal(null);
     setReviewChecksOpen(false);
@@ -603,10 +608,15 @@ export function PullRequestCodeTab({
     });
   }, [coverage.hunks, files, progress.reviewedFiles]);
   useEffect(() => {
-    if (reviewWorkspace === undefined || selectedReviewPath !== null) return;
+    if (reviewWorkspace === undefined) return;
+    const autoOpenKey = `${scopeKey}:${reviewWorkspace.cwd}`;
+    if (autoOpenedReviewKeyRef.current === autoOpenKey) return;
     const first = reviewFiles[0];
-    if (first) setSelectedReviewPath(first.path);
-  }, [reviewFiles, reviewWorkspace, selectedReviewPath]);
+    if (!first) return;
+    autoOpenedReviewKeyRef.current = autoOpenKey;
+    setSelectedReviewPath(first.path);
+    setOpenReviewPaths([first.path]);
+  }, [reviewFiles, reviewWorkspace, scopeKey]);
   const nextCursor = loadedSlices.at(-1)?.nextCursor ?? null;
   // Review mode needs a complete file index even while the reader is in full-file mode, where
   // the diff footer is not mounted and cannot trigger the normal intersection observer.
@@ -755,9 +765,11 @@ export function PullRequestCodeTab({
   );
   const reviewItems = useMemo(
     () =>
-      reviewWorkspace === undefined || selectedReviewPath === null
+      reviewWorkspace === undefined
         ? items
-        : items.filter((item) => resolveFileDiffPath(item.fileDiff) === selectedReviewPath),
+        : selectedReviewPath === null
+          ? []
+          : items.filter((item) => resolveFileDiffPath(item.fileDiff) === selectedReviewPath),
     [items, reviewWorkspace, selectedReviewPath],
   );
   const lineStat = useMemo(() => getDiffLineStat(files), [files]);
@@ -1017,6 +1029,9 @@ export function PullRequestCodeTab({
       if (!progressKey) return;
       openNavigation(progressKey, target);
       setSelectedReviewPath(target.path);
+      setOpenReviewPaths((current) =>
+        current.includes(target.path) ? current : [...current, target.path],
+      );
       setReviewReveal({ path: target.path, line: target.line, column: target.column });
       setReviewViewMode("file");
       setSemanticOpen(true);
@@ -1307,6 +1322,7 @@ export function PullRequestCodeTab({
   const selectReviewPath = useCallback(
     (path: string, line?: number, column?: number) => {
       setSelectedReviewPath(path);
+      setOpenReviewPaths((current) => (current.includes(path) ? current : [...current, path]));
       setHistoryTarget(null);
       if (line !== undefined) {
         setReviewReveal({ path, line, column: column ?? 1 });
@@ -1322,6 +1338,9 @@ export function PullRequestCodeTab({
     const target = navigation.target;
     if (!target) return;
     setSelectedReviewPath(target.path);
+    setOpenReviewPaths((current) =>
+      current.includes(target.path) ? current : [...current, target.path],
+    );
     setReviewReveal({ path: target.path, line: target.line, column: target.column });
     setReviewViewMode("file");
   }, [navigation.target]);
@@ -1329,6 +1348,9 @@ export function PullRequestCodeTab({
     (hunk: PullRequestReviewHunk) => {
       if (progressKey) setHunkVisited(progressKey, hunk.id, true);
       setSelectedReviewPath(hunk.path);
+      setOpenReviewPaths((current) =>
+        current.includes(hunk.path) ? current : [...current, hunk.path],
+      );
       setReviewChecksOpen(false);
       setHistoryTarget(null);
       if (reviewViewMode === "file") {
@@ -1345,6 +1367,23 @@ export function PullRequestCodeTab({
       });
     },
     [files, progressKey, reviewViewMode, setHunkVisited],
+  );
+  const closeReviewPath = useCallback(
+    (path: string) => {
+      setOpenReviewPaths((current) => {
+        const closingIndex = current.indexOf(path);
+        if (closingIndex < 0) return current;
+        const next = current.filter((candidate) => candidate !== path);
+        if (selectedReviewPath === path) {
+          setSelectedReviewPath(next[Math.min(closingIndex, Math.max(0, next.length - 1))] ?? null);
+          setReviewReveal(null);
+          setSelectedLines(null);
+          setHistoryTarget(null);
+        }
+        return next;
+      });
+    },
+    [selectedReviewPath],
   );
   const selectedReviewFile = reviewFiles.find((file) => file.path === selectedReviewPath) ?? null;
   const selectedFileHunks = coverage.hunks.filter((hunk) => hunk.path === selectedReviewPath);
@@ -1448,6 +1487,46 @@ export function PullRequestCodeTab({
   );
   const commentsPanelOpen =
     reviewCommentsVisible && !reviewCoverageOpen && !reviewChecksOpen && !reviewHandoffOpen;
+  const reviewInspectorNavigation = (active: "conversation" | "coverage" | "checks" | "agent") => (
+    <div
+      role="tablist"
+      aria-label="Review inspector"
+      className="flex h-9 shrink-0 items-end gap-0.5 border-b border-border/60 bg-muted/10 px-2"
+    >
+      {(
+        [
+          ["conversation", "Conversation", MessageSquareIcon],
+          ["coverage", "Coverage", EyeIcon],
+          ["checks", "Checks", ListChecksIcon],
+          ["agent", "Agent", BotIcon],
+        ] as const
+      ).map(([value, label, Icon]) => (
+        <button
+          key={value}
+          type="button"
+          role="tab"
+          aria-selected={active === value}
+          className={cn(
+            "flex h-9 min-w-0 items-center gap-1 border-b-2 px-2 text-[10px] transition-colors",
+            active === value
+              ? "border-violet-500 text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+          onClick={() => {
+            setHistoryTarget(null);
+            setReviewCommentsVisible(value === "conversation");
+            setReviewCoverageOpen(value === "coverage");
+            setReviewChecksOpen(value === "checks");
+            setReviewHandoffOpen(value === "agent");
+            if (value !== "conversation") setSemanticOpen(false);
+          }}
+        >
+          <Icon className="size-3 shrink-0" />
+          <span className="truncate">{label}</span>
+        </button>
+      ))}
+    </div>
+  );
   /**
    * The same controls the thread diff panel carries, in the same order, minus the
    * ignore-whitespace toggle: that is `git diff -w` on the server, and no host's pull request
@@ -1849,14 +1928,53 @@ export function PullRequestCodeTab({
           {reviewWorkspace && selectedReviewPath ? (
             <div className="shrink-0 border-b border-border/60 bg-background">
               <div className="flex h-9 min-w-0 items-end px-2">
-                <button
-                  type="button"
-                  className="flex h-9 min-w-0 max-w-[55%] items-center gap-1.5 border-b-2 border-foreground px-2 font-mono text-[11px] text-foreground"
-                  onClick={() => setReviewQuickOpen(true)}
+                <div
+                  role="tablist"
+                  aria-label="Open review files"
+                  className="flex min-w-0 flex-1 self-stretch overflow-x-auto"
                 >
-                  <FileCode2Icon className="size-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{selectedReviewPath}</span>
-                </button>
+                  {openReviewPaths.map((path) => {
+                    const pathLabel = reviewFilePathLabel(path);
+                    const active = selectedReviewPath === path;
+                    return (
+                      <div
+                        key={path}
+                        role="tab"
+                        aria-selected={active}
+                        className={cn(
+                          "group flex h-full max-w-52 shrink-0 items-center border-r border-border/50 px-2 text-[10px]",
+                          active
+                            ? "border-t-2 border-t-violet-500 bg-background text-foreground"
+                            : "bg-muted/15 text-muted-foreground hover:bg-accent/45",
+                        )}
+                      >
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <button
+                                type="button"
+                                className="flex min-w-0 flex-1 items-center gap-1.5"
+                                onClick={() => selectReviewPath(path)}
+                              />
+                            }
+                          >
+                            <FileCode2Icon className="size-3 shrink-0" />
+                            <span className="truncate font-medium">{pathLabel.name}</span>
+                          </TooltipTrigger>
+                          <TooltipPopup side="bottom">{path}</TooltipPopup>
+                        </Tooltip>
+                        <button
+                          type="button"
+                          className="ml-1 flex size-5 shrink-0 items-center justify-center rounded opacity-60 hover:bg-accent hover:opacity-100"
+                          aria-label={`Close ${pathLabel.name}`}
+                          onClick={() => closeReviewPath(path)}
+                        >
+                          <XIcon className="size-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
                 <div
                   className="ml-auto flex h-full items-end gap-1"
                   role="tablist"
@@ -2058,7 +2176,11 @@ export function PullRequestCodeTab({
             {/* The viewer virtualizes against the element it is told is scrolling and places its
               rows absolutely, so it has to own that element — the thread diff panel hands it the
               same one. Scrolling from a parent instead leaves it painting over its neighbours. */}
-            {reviewWorkspace && reviewViewMode === "file" && selectedReviewPath ? (
+            {reviewWorkspace && selectedReviewPath === null ? (
+              <div className="flex h-full items-center justify-center px-4 text-center text-xs text-muted-foreground">
+                Open a changed file or use Cmd/Ctrl+K to find code.
+              </div>
+            ) : reviewWorkspace && reviewViewMode === "file" && selectedReviewPath ? (
               <PullRequestFullFileView
                 environmentId={reviewWorkspace.environmentId}
                 cwd={reviewWorkspace.cwd}
@@ -2135,6 +2257,7 @@ export function PullRequestCodeTab({
         </div>
         {reviewHandoffOpen && reviewWorkspace ? (
           <PullRequestReviewHandoffPanel
+            navigation={reviewInspectorNavigation("agent")}
             detail={detail}
             revision={reviewWorkspace.revision}
             coverage={coverage}
@@ -2155,6 +2278,7 @@ export function PullRequestCodeTab({
           />
         ) : reviewCoverageOpen && reviewWorkspace ? (
           <PullRequestReviewCoveragePanel
+            navigation={reviewInspectorNavigation("coverage")}
             coverage={coverage}
             onClose={() => setReviewCoverageOpen(false)}
             onOpenHunk={openCoverageHunk}
@@ -2167,6 +2291,7 @@ export function PullRequestCodeTab({
           />
         ) : reviewChecksOpen && reviewWorkspace ? (
           <PullRequestReviewChecksPanel
+            navigation={reviewInspectorNavigation("checks")}
             environmentId={reviewWorkspace.environmentId}
             cwd={reviewWorkspace.cwd}
             checks={detail.checks}
@@ -2185,6 +2310,7 @@ export function PullRequestCodeTab({
               } as CSSProperties
             }
           >
+            {reviewInspectorNavigation("conversation")}
             <div className="hidden lg:block">
               <ReviewColumnResizeHandle edge="left" handlers={reviewCommentsColumn.handlers} />
             </div>
