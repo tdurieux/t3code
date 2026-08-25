@@ -59,15 +59,15 @@ const RepoRoot = Effect.service(Path.Path).pipe(
   Effect.flatMap((path) => path.fromFileUrl(new URL("../../..", import.meta.url))),
 );
 
-const CODEAPI_ASSET_NAMES = ["semasmith.mjs", "semasmith.wasm"] as const;
+const SEMASMITH_ASSET_NAMES = ["semasmith.mjs", "semasmith.wasm"] as const;
 
-const bundleCodeApiAssets = Effect.fn("bundleCodeApiAssets")(function* (serverDir: string) {
+const bundleSemasmithAssets = Effect.fn("bundleSemasmithAssets")(function* (serverDir: string) {
   const path = yield* Path.Path;
   const fs = yield* FileSystem.FileSystem;
-  const sourceDir = path.join(serverDir, "assets/codeapi");
-  const targetDir = path.join(serverDir, "dist/codeapi");
+  const sourceDir = path.join(serverDir, "assets/semasmith");
+  const targetDir = path.join(serverDir, "dist/semasmith");
 
-  for (const name of CODEAPI_ASSET_NAMES) {
+  for (const name of SEMASMITH_ASSET_NAMES) {
     const sourcePath = path.join(sourceDir, name);
     if (!(yield* fs.exists(sourcePath))) {
       return yield* new ServerCliBuildAssetMissingError({ assetPath: sourcePath });
@@ -75,10 +75,10 @@ const bundleCodeApiAssets = Effect.fn("bundleCodeApiAssets")(function* (serverDi
   }
 
   yield* fs.makeDirectory(targetDir, { recursive: true });
-  for (const name of CODEAPI_ASSET_NAMES) {
+  for (const name of SEMASMITH_ASSET_NAMES) {
     yield* fs.copyFile(path.join(sourceDir, name), path.join(targetDir, name));
   }
-  yield* Effect.log("[cli] Bundled Semasmith WASM into dist/codeapi");
+  yield* Effect.log("[cli] Bundled Semasmith WASM into dist/semasmith");
 });
 
 const readWorkspaceConfig = Effect.fn("readWorkspaceConfig")(function* () {
@@ -183,7 +183,7 @@ const buildCmd = Command.make(
           shell: false,
         }),
       );
-      yield* bundleCodeApiAssets(serverDir);
+      yield* bundleSemasmithAssets(serverDir);
 
       const webDist = path.join(repoRoot, "apps/web/dist");
       const clientTarget = path.join(serverDir, "dist/client");
@@ -250,7 +250,7 @@ const publishCmd = Command.make(
         "dist/bin.mjs",
         "dist/service-launcher.mjs",
         "dist/client/index.html",
-        ...CODEAPI_ASSET_NAMES.map((name) => `dist/codeapi/${name}`),
+        ...SEMASMITH_ASSET_NAMES.map((name) => `dist/semasmith/${name}`),
       ]) {
         const abs = path.join(serverDir, relPath);
         if (!(yield* fs.exists(abs))) {

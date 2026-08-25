@@ -74,13 +74,13 @@ const { gunzipSync } = require("node:zlib");
 
 const projects = new Map();
 let projectSequence = 0;
-let codeapiPromise;
+let semasmithPromise;
 
-function codeapi() {
-  if (!codeapiPromise) {
-    codeapiPromise = import(pathToFileURL(workerData.modulePath).href).then(async (loaded) => {
-      const createCodeApi = loaded.default;
-      if (typeof createCodeApi !== "function") {
+function semasmith() {
+  if (!semasmithPromise) {
+    semasmithPromise = import(pathToFileURL(workerData.modulePath).href).then(async (loaded) => {
+      const createSemasmith = loaded.default;
+      if (typeof createSemasmith !== "function") {
         throw new Error("The Semasmith WASM module has no default factory export");
       }
       const storedBytes = readFileSync(workerData.wasmPath);
@@ -88,7 +88,7 @@ function codeapi() {
         storedBytes[0] === 0x1f && storedBytes[1] === 0x8b
           ? gunzipSync(storedBytes)
           : storedBytes;
-      return createCodeApi({
+      return createSemasmith({
         locateFile: (name) => name.endsWith(".wasm") ? workerData.wasmPath : name,
         instantiateWasm: (imports, receiveInstance) => {
           const module = new WebAssembly.Module(wasmBytes);
@@ -99,7 +99,7 @@ function codeapi() {
       });
     });
   }
-  return codeapiPromise;
+  return semasmithPromise;
 }
 
 function containsPosition(location, path, line, column) {
@@ -157,7 +157,7 @@ async function handle(request) {
   if (request.operation === "build") {
     const existing = projects.get(request.projectKey);
     if (existing && request.force !== true) return existing.summary;
-    const module = await codeapi();
+    const module = await semasmith();
     const project = module.createProject(request.files, request.language);
     try {
       const summary = project.build();

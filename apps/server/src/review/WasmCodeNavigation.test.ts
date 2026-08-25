@@ -8,7 +8,7 @@ import * as FileSystem from "effect/FileSystem";
 import { WasmCodeNavigation } from "./WasmCodeNavigation.ts";
 
 const fakeModule = `
-export default async function createCodeApi(moduleArg) {
+export default async function createSemasmith(moduleArg) {
   await new Promise((resolve) => moduleArg.instantiateWasm({}, resolve));
   return {
     createProject(_files, language) {
@@ -172,7 +172,7 @@ describe("WasmCodeNavigation", () => {
     Effect.gen(function* () {
       const navigation = new WasmCodeNavigation();
       const wasmPath = NodeURL.fileURLToPath(
-        new URL("../../assets/codeapi/semasmith.wasm", import.meta.url),
+        new URL("../../assets/semasmith/semasmith.wasm", import.meta.url),
       );
 
       const summary = yield* Effect.promise(() =>
@@ -193,7 +193,7 @@ describe("WasmCodeNavigation", () => {
   it.effect("keeps a project in a worker and resolves uses and declarations", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-codeapi-wasm-" });
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-semasmith-wasm-" });
       const wasmPath = `${directory}/semasmith.wasm`;
       yield* fs.writeFile(
         wasmPath,

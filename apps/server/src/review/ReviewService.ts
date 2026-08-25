@@ -306,12 +306,12 @@ export const make = Effect.gen(function* () {
       );
     }
 
-    const configuredWasm = globalThis.process.env.T3_CODEAPI_IR_PATH?.trim();
+    const configuredWasm = globalThis.process.env.T3_SEMASMITH_WASM_PATH?.trim();
     const candidates = configuredWasm
       ? [configuredWasm]
       : [
-          NodeURL.fileURLToPath(new URL("./codeapi/semasmith.wasm", import.meta.url)),
-          NodeURL.fileURLToPath(new URL("../../assets/codeapi/semasmith.wasm", import.meta.url)),
+          NodeURL.fileURLToPath(new URL("./semasmith/semasmith.wasm", import.meta.url)),
+          NodeURL.fileURLToPath(new URL("../../assets/semasmith/semasmith.wasm", import.meta.url)),
         ];
     let wasmPath: string | null = null;
     for (const candidate of candidates) {

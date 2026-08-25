@@ -2755,8 +2755,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     serverDist: path.join(repoRoot, "apps/server/dist"),
   };
   const bundledClientEntry = path.join(distDirs.serverDist, "client/index.html");
-  const bundledSemasmithWasm = path.join(distDirs.serverDist, "codeapi/semasmith.wasm");
-  const bundledSemasmithModule = path.join(distDirs.serverDist, "codeapi/semasmith.mjs");
+  const bundledSemasmithWasm = path.join(distDirs.serverDist, "semasmith/semasmith.wasm");
+  const bundledSemasmithModule = path.join(distDirs.serverDist, "semasmith/semasmith.mjs");
 
   if (!options.skipBuild) {
     yield* Effect.log("[desktop-artifact] Building desktop/server/web artifacts...");

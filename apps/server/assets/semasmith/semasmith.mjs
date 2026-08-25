@@ -1,4 +1,4 @@
-async function createCodeApi(moduleArg = {}) {
+async function createSemasmith(moduleArg = {}) {
   var Module = moduleArg;
   var ENVIRONMENT_IS_WEB = !!globalThis.window;
   var ENVIRONMENT_IS_WORKER = !!globalThis.WorkerGlobalScope;
@@ -122,9 +122,9 @@ async function createCodeApi(moduleArg = {}) {
   var wasmBinaryFile;
   function findWasmBinary() {
     if (Module["locateFile"]) {
-      return locateFile("codeapi_ir.wasm");
+      return locateFile("semasmith.wasm");
     }
-    return new URL("codeapi_ir.wasm", import.meta.url).href;
+    return new URL("semasmith.wasm", import.meta.url).href;
   }
   function getBinarySync(file) {
     if (readBinary) {
@@ -483,23 +483,23 @@ async function createCodeApi(moduleArg = {}) {
       }
     }
   }
-  var _codeapi_build_ir,
-    _codeapi_build_model,
-    _codeapi_project_build,
-    _codeapi_project_callees_of,
-    _codeapi_project_callers_of,
-    _codeapi_project_definition_at,
-    _codeapi_project_error_len,
-    _codeapi_project_error_ptr,
-    _codeapi_project_free,
-    _codeapi_project_references_of,
-    _codeapi_project_summary_len,
-    _codeapi_project_summary_ptr,
-    _codeapi_result_data_ptr,
-    _codeapi_result_error_ptr,
-    _codeapi_result_free,
-    _codeapi_result_data_len,
-    _codeapi_result_error_len,
+  var _semasmith_build_ir,
+    _semasmith_build_model,
+    _semasmith_project_build,
+    _semasmith_project_callees_of,
+    _semasmith_project_callers_of,
+    _semasmith_project_definition_at,
+    _semasmith_project_error_len,
+    _semasmith_project_error_ptr,
+    _semasmith_project_free,
+    _semasmith_project_references_of,
+    _semasmith_project_summary_len,
+    _semasmith_project_summary_ptr,
+    _semasmith_result_data_ptr,
+    _semasmith_result_error_ptr,
+    _semasmith_result_free,
+    _semasmith_result_data_len,
+    _semasmith_result_error_len,
     _malloc,
     _free,
     ___trap,
@@ -507,23 +507,25 @@ async function createCodeApi(moduleArg = {}) {
     __indirect_function_table,
     wasmMemory;
   function assignWasmExports(wasmExports) {
-    _codeapi_build_ir = Module["_codeapi_build_ir"] = wasmExports["w"];
-    _codeapi_build_model = Module["_codeapi_build_model"] = wasmExports["x"];
-    _codeapi_project_build = Module["_codeapi_project_build"] = wasmExports["y"];
-    _codeapi_project_callees_of = Module["_codeapi_project_callees_of"] = wasmExports["z"];
-    _codeapi_project_callers_of = Module["_codeapi_project_callers_of"] = wasmExports["A"];
-    _codeapi_project_definition_at = Module["_codeapi_project_definition_at"] = wasmExports["B"];
-    _codeapi_project_error_len = Module["_codeapi_project_error_len"] = wasmExports["C"];
-    _codeapi_project_error_ptr = Module["_codeapi_project_error_ptr"] = wasmExports["D"];
-    _codeapi_project_free = Module["_codeapi_project_free"] = wasmExports["E"];
-    _codeapi_project_references_of = Module["_codeapi_project_references_of"] = wasmExports["F"];
-    _codeapi_project_summary_len = Module["_codeapi_project_summary_len"] = wasmExports["G"];
-    _codeapi_project_summary_ptr = Module["_codeapi_project_summary_ptr"] = wasmExports["H"];
-    _codeapi_result_data_ptr = Module["_codeapi_result_data_ptr"] = wasmExports["I"];
-    _codeapi_result_error_ptr = Module["_codeapi_result_error_ptr"] = wasmExports["J"];
-    _codeapi_result_free = Module["_codeapi_result_free"] = wasmExports["K"];
-    _codeapi_result_data_len = Module["_codeapi_result_data_len"] = wasmExports["L"];
-    _codeapi_result_error_len = Module["_codeapi_result_error_len"] = wasmExports["M"];
+    _semasmith_build_ir = Module["_semasmith_build_ir"] = wasmExports["w"];
+    _semasmith_build_model = Module["_semasmith_build_model"] = wasmExports["x"];
+    _semasmith_project_build = Module["_semasmith_project_build"] = wasmExports["y"];
+    _semasmith_project_callees_of = Module["_semasmith_project_callees_of"] = wasmExports["z"];
+    _semasmith_project_callers_of = Module["_semasmith_project_callers_of"] = wasmExports["A"];
+    _semasmith_project_definition_at = Module["_semasmith_project_definition_at"] =
+      wasmExports["B"];
+    _semasmith_project_error_len = Module["_semasmith_project_error_len"] = wasmExports["C"];
+    _semasmith_project_error_ptr = Module["_semasmith_project_error_ptr"] = wasmExports["D"];
+    _semasmith_project_free = Module["_semasmith_project_free"] = wasmExports["E"];
+    _semasmith_project_references_of = Module["_semasmith_project_references_of"] =
+      wasmExports["F"];
+    _semasmith_project_summary_len = Module["_semasmith_project_summary_len"] = wasmExports["G"];
+    _semasmith_project_summary_ptr = Module["_semasmith_project_summary_ptr"] = wasmExports["H"];
+    _semasmith_result_data_ptr = Module["_semasmith_result_data_ptr"] = wasmExports["I"];
+    _semasmith_result_error_ptr = Module["_semasmith_result_error_ptr"] = wasmExports["J"];
+    _semasmith_result_free = Module["_semasmith_result_free"] = wasmExports["K"];
+    _semasmith_result_data_len = Module["_semasmith_result_data_len"] = wasmExports["L"];
+    _semasmith_result_error_len = Module["_semasmith_result_error_len"] = wasmExports["M"];
     _malloc = Module["_malloc"] = wasmExports["N"];
     _free = Module["_free"] = wasmExports["O"];
     ___trap = wasmExports["P"];
@@ -568,18 +570,18 @@ async function createCodeApi(moduleArg = {}) {
   var wasmExports;
   wasmExports = await createWasm();
   await run();
-  const codeapiEncoder = new TextEncoder();
-  const codeapiDecoder = new TextDecoder();
-  function codeapiAllocString(value) {
-    const bytes = codeapiEncoder.encode(value);
+  const semasmithEncoder = new TextEncoder();
+  const semasmithDecoder = new TextDecoder();
+  function semasmithAllocString(value) {
+    const bytes = semasmithEncoder.encode(value);
     const pointer = Module._malloc(Math.max(bytes.length, 1));
     HEAPU8.set(bytes, pointer);
     return { pointer, length: bytes.length };
   }
-  function codeapiBuild(buildFunction, filePath, source, language) {
-    const filePathInput = codeapiAllocString(filePath);
-    const sourceInput = codeapiAllocString(source);
-    const languageInput = codeapiAllocString(language);
+  function semasmithBuild(buildFunction, filePath, source, language) {
+    const filePathInput = semasmithAllocString(filePath);
+    const sourceInput = semasmithAllocString(source);
+    const languageInput = semasmithAllocString(language);
     let result = 0;
     try {
       result = buildFunction(
@@ -590,20 +592,20 @@ async function createCodeApi(moduleArg = {}) {
         languageInput.pointer,
         languageInput.length,
       );
-      const errorLength = Module._codeapi_result_error_len(result);
+      const errorLength = Module._semasmith_result_error_len(result);
       if (errorLength !== 0) {
-        const errorPointer = Module._codeapi_result_error_ptr(result);
-        const message = codeapiDecoder.decode(
+        const errorPointer = Module._semasmith_result_error_ptr(result);
+        const message = semasmithDecoder.decode(
           HEAPU8.subarray(errorPointer, errorPointer + errorLength),
         );
         throw new Error(message);
       }
-      const dataPointer = Module._codeapi_result_data_ptr(result);
-      const dataLength = Module._codeapi_result_data_len(result);
+      const dataPointer = Module._semasmith_result_data_ptr(result);
+      const dataLength = Module._semasmith_result_data_len(result);
       return HEAPU8.slice(dataPointer, dataPointer + dataLength);
     } finally {
       if (result !== 0) {
-        Module._codeapi_result_free(result);
+        Module._semasmith_result_free(result);
       }
       Module._free(filePathInput.pointer);
       Module._free(sourceInput.pointer);
@@ -611,34 +613,34 @@ async function createCodeApi(moduleArg = {}) {
     }
   }
   Module.buildIR = function buildIR(filePath, source, language) {
-    return codeapiBuild(Module._codeapi_build_ir, filePath, source, language);
+    return semasmithBuild(Module._semasmith_build_ir, filePath, source, language);
   };
   Module.buildModel = function buildModel(filePath, source, language) {
-    const json = codeapiBuild(Module._codeapi_build_model, filePath, source, language);
-    return JSON.parse(codeapiDecoder.decode(json));
+    const json = semasmithBuild(Module._semasmith_build_model, filePath, source, language);
+    return JSON.parse(semasmithDecoder.decode(json));
   };
-  function codeapiReadProjectResult(result) {
+  function semasmithReadProjectResult(result) {
     if (result === 0) {
-      throw new Error("CodeAPI project query returned a null result");
+      throw new Error("Semasmith project query returned a null result");
     }
     try {
-      const errorLength = Module._codeapi_result_error_len(result);
+      const errorLength = Module._semasmith_result_error_len(result);
       if (errorLength !== 0) {
-        const errorPointer = Module._codeapi_result_error_ptr(result);
+        const errorPointer = Module._semasmith_result_error_ptr(result);
         throw new Error(
-          codeapiDecoder.decode(HEAPU8.subarray(errorPointer, errorPointer + errorLength)),
+          semasmithDecoder.decode(HEAPU8.subarray(errorPointer, errorPointer + errorLength)),
         );
       }
-      const dataPointer = Module._codeapi_result_data_ptr(result);
-      const dataLength = Module._codeapi_result_data_len(result);
+      const dataPointer = Module._semasmith_result_data_ptr(result);
+      const dataLength = Module._semasmith_result_data_len(result);
       return JSON.parse(
-        codeapiDecoder.decode(HEAPU8.subarray(dataPointer, dataPointer + dataLength)),
+        semasmithDecoder.decode(HEAPU8.subarray(dataPointer, dataPointer + dataLength)),
       );
     } finally {
-      Module._codeapi_result_free(result);
+      Module._semasmith_result_free(result);
     }
   }
-  function codeapiNormalizeProjectFiles(files) {
+  function semasmithNormalizeProjectFiles(files) {
     if (Array.isArray(files)) {
       return files.map((file) => {
         if (
@@ -662,7 +664,7 @@ async function createCodeApi(moduleArg = {}) {
     }
     throw new TypeError("Project files must be an array or a path-to-source object");
   }
-  function codeapiSymbolFqn(symbol) {
+  function semasmithSymbolFqn(symbol) {
     if (typeof symbol === "string") {
       return symbol;
     }
@@ -671,12 +673,12 @@ async function createCodeApi(moduleArg = {}) {
     }
     throw new TypeError("Expected a symbol FQN or navigation symbol");
   }
-  function CodeApiProject(files, language, options) {
+  function SemasmithProject(files, language, options) {
     if (typeof language !== "string" || language.length === 0) {
       throw new TypeError("Project language must be a non-empty string");
     }
     this._files = new Map(
-      codeapiNormalizeProjectFiles(files).map((file) => [file.path, file.source]),
+      semasmithNormalizeProjectFiles(files).map((file) => [file.path, file.source]),
     );
     this._language = language;
     this._options = options || {};
@@ -684,18 +686,18 @@ async function createCodeApi(moduleArg = {}) {
     this._dirty = true;
     this._disposed = false;
   }
-  CodeApiProject.prototype._assertUsable = function _assertUsable() {
+  SemasmithProject.prototype._assertUsable = function _assertUsable() {
     if (this._disposed) {
-      throw new Error("CodeAPI project has been disposed");
+      throw new Error("Semasmith project has been disposed");
     }
   };
-  CodeApiProject.prototype._assertBuilt = function _assertBuilt() {
+  SemasmithProject.prototype._assertBuilt = function _assertBuilt() {
     this._assertUsable();
     if (this._handle === 0 || this._dirty) {
-      throw new Error("CodeAPI project must be built after its latest file change");
+      throw new Error("Semasmith project must be built after its latest file change");
     }
   };
-  CodeApiProject.prototype.setFile = function setFile(path, source) {
+  SemasmithProject.prototype.setFile = function setFile(path, source) {
     this._assertUsable();
     if (typeof path !== "string" || path.length === 0) {
       throw new TypeError("Project file path must be a non-empty string");
@@ -706,21 +708,21 @@ async function createCodeApi(moduleArg = {}) {
     this._files.set(path, source);
     this._dirty = true;
   };
-  CodeApiProject.prototype.removeFile = function removeFile(path) {
+  SemasmithProject.prototype.removeFile = function removeFile(path) {
     this._assertUsable();
     if (this._files.delete(path)) {
       this._dirty = true;
     }
   };
-  CodeApiProject.prototype.build = function build() {
+  SemasmithProject.prototype.build = function build() {
     this._assertUsable();
-    const filesInput = codeapiAllocString(
+    const filesInput = semasmithAllocString(
       JSON.stringify(Array.from(this._files, ([path, source]) => ({ path, source }))),
     );
-    const languageInput = codeapiAllocString(this._language);
+    const languageInput = semasmithAllocString(this._language);
     let nextHandle = 0;
     try {
-      nextHandle = Module._codeapi_project_build(
+      nextHandle = Module._semasmith_project_build(
         filesInput.pointer,
         filesInput.length,
         languageInput.pointer,
@@ -729,22 +731,22 @@ async function createCodeApi(moduleArg = {}) {
         this._options.runSolver === false ? 0 : 1,
       );
       if (nextHandle === 0) {
-        throw new Error("CodeAPI project build returned a null handle");
+        throw new Error("Semasmith project build returned a null handle");
       }
-      const errorLength = Module._codeapi_project_error_len(nextHandle);
+      const errorLength = Module._semasmith_project_error_len(nextHandle);
       if (errorLength !== 0) {
-        const errorPointer = Module._codeapi_project_error_ptr(nextHandle);
+        const errorPointer = Module._semasmith_project_error_ptr(nextHandle);
         throw new Error(
-          codeapiDecoder.decode(HEAPU8.subarray(errorPointer, errorPointer + errorLength)),
+          semasmithDecoder.decode(HEAPU8.subarray(errorPointer, errorPointer + errorLength)),
         );
       }
-      const summaryPointer = Module._codeapi_project_summary_ptr(nextHandle);
-      const summaryLength = Module._codeapi_project_summary_len(nextHandle);
+      const summaryPointer = Module._semasmith_project_summary_ptr(nextHandle);
+      const summaryLength = Module._semasmith_project_summary_len(nextHandle);
       const summary = JSON.parse(
-        codeapiDecoder.decode(HEAPU8.subarray(summaryPointer, summaryPointer + summaryLength)),
+        semasmithDecoder.decode(HEAPU8.subarray(summaryPointer, summaryPointer + summaryLength)),
       );
       if (this._handle !== 0) {
-        Module._codeapi_project_free(this._handle);
+        Module._semasmith_project_free(this._handle);
       }
       this._handle = nextHandle;
       nextHandle = 0;
@@ -752,18 +754,18 @@ async function createCodeApi(moduleArg = {}) {
       return summary;
     } finally {
       if (nextHandle !== 0) {
-        Module._codeapi_project_free(nextHandle);
+        Module._semasmith_project_free(nextHandle);
       }
       Module._free(filesInput.pointer);
       Module._free(languageInput.pointer);
     }
   };
-  CodeApiProject.prototype.definitionAt = function definitionAt(path, line, column) {
+  SemasmithProject.prototype.definitionAt = function definitionAt(path, line, column) {
     this._assertBuilt();
-    const pathInput = codeapiAllocString(path);
+    const pathInput = semasmithAllocString(path);
     try {
-      return codeapiReadProjectResult(
-        Module._codeapi_project_definition_at(
+      return semasmithReadProjectResult(
+        Module._semasmith_project_definition_at(
           this._handle,
           pathInput.pointer,
           pathInput.length,
@@ -775,29 +777,29 @@ async function createCodeApi(moduleArg = {}) {
       Module._free(pathInput.pointer);
     }
   };
-  CodeApiProject.prototype._symbolQuery = function _symbolQuery(queryFunction, symbol) {
+  SemasmithProject.prototype._symbolQuery = function _symbolQuery(queryFunction, symbol) {
     this._assertBuilt();
-    const fqnInput = codeapiAllocString(codeapiSymbolFqn(symbol));
+    const fqnInput = semasmithAllocString(semasmithSymbolFqn(symbol));
     try {
-      return codeapiReadProjectResult(
+      return semasmithReadProjectResult(
         queryFunction(this._handle, fqnInput.pointer, fqnInput.length),
       );
     } finally {
       Module._free(fqnInput.pointer);
     }
   };
-  CodeApiProject.prototype.referencesOf = function referencesOf(symbol) {
-    return this._symbolQuery(Module._codeapi_project_references_of, symbol);
+  SemasmithProject.prototype.referencesOf = function referencesOf(symbol) {
+    return this._symbolQuery(Module._semasmith_project_references_of, symbol);
   };
-  CodeApiProject.prototype.callersOf = function callersOf(symbol) {
-    return this._symbolQuery(Module._codeapi_project_callers_of, symbol);
+  SemasmithProject.prototype.callersOf = function callersOf(symbol) {
+    return this._symbolQuery(Module._semasmith_project_callers_of, symbol);
   };
-  CodeApiProject.prototype.calleesOf = function calleesOf(symbol) {
-    return this._symbolQuery(Module._codeapi_project_callees_of, symbol);
+  SemasmithProject.prototype.calleesOf = function calleesOf(symbol) {
+    return this._symbolQuery(Module._semasmith_project_callees_of, symbol);
   };
-  CodeApiProject.prototype.dispose = function dispose() {
+  SemasmithProject.prototype.dispose = function dispose() {
     if (this._handle !== 0) {
-      Module._codeapi_project_free(this._handle);
+      Module._semasmith_project_free(this._handle);
       this._handle = 0;
     }
     this._disposed = true;
@@ -805,8 +807,8 @@ async function createCodeApi(moduleArg = {}) {
     this._files.clear();
   };
   Module.createProject = function createProject(files, language, options) {
-    return new CodeApiProject(files, language, options);
+    return new SemasmithProject(files, language, options);
   };
   return Module;
 }
-export default createCodeApi;
+export default createSemasmith;
