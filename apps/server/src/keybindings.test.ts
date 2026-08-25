@@ -204,6 +204,18 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
       assert.equal(defaultsByCommand.get("projectSearch.toggle"), "mod+shift+f");
       assert.equal(defaultsByCommand.get("sidebar.toggle"), "mod+b");
       assert.equal(defaultsByCommand.get("rightPanel.toggle"), "mod+alt+b");
+      assert.deepEqual(
+        Keybindings.DEFAULT_KEYBINDINGS.filter(
+          (binding) => binding.command === "review.change.next",
+        ).map((binding) => binding.key),
+        ["]", "alt+arrowdown"],
+      );
+      assert.deepEqual(
+        Keybindings.DEFAULT_KEYBINDINGS.filter(
+          (binding) => binding.command === "review.change.previous",
+        ).map((binding) => binding.key),
+        ["[", "alt+arrowup"],
+      );
       assert.isFalse(defaultsByCommand.has("rightPanel.toggleMaximized"));
       assert.equal(defaultsByCommand.get("terminal.splitVertical"), "mod+shift+d");
       assert.equal(defaultsByCommand.get("modelPicker.jump.1"), "mod+1");
@@ -304,6 +316,69 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         }
         assert.isTrue(byCommand.has("script.run-tests.run"));
       }).pipe(Effect.provide(makeKeybindingsLayer())),
+  );
+
+  it.effect("adds new alternate defaults beside older persisted defaults", () =>
+    Effect.gen(function* () {
+      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
+      yield* writeKeybindingsConfig(
+        keybindingsConfigPath,
+        Keybindings.DEFAULT_KEYBINDINGS.filter(
+          (entry) => entry.key !== "alt+arrowup" && entry.key !== "alt+arrowdown",
+        ),
+      );
+
+      yield* Effect.gen(function* () {
+        const keybindings = yield* Keybindings.Keybindings;
+        yield* keybindings.syncDefaultKeybindingsOnStartup;
+      });
+
+      const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
+      assert.isTrue(
+        persisted.some(
+          (entry) =>
+            entry.command === "review.change.next" &&
+            entry.key === "alt+arrowdown" &&
+            entry.when === "reviewFocus",
+        ),
+      );
+      assert.isTrue(
+        persisted.some(
+          (entry) =>
+            entry.command === "review.change.previous" &&
+            entry.key === "alt+arrowup" &&
+            entry.when === "reviewFocus",
+        ),
+      );
+    }).pipe(Effect.provide(makeKeybindingsLayer())),
+  );
+
+  it.effect("does not add alternate defaults over a custom review binding", () =>
+    Effect.gen(function* () {
+      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
+      yield* writeKeybindingsConfig(keybindingsConfigPath, [
+        {
+          key: "mod+g",
+          command: "review.change.next",
+          when: "reviewFocus",
+        },
+      ]);
+
+      yield* Effect.gen(function* () {
+        const keybindings = yield* Keybindings.Keybindings;
+        yield* keybindings.syncDefaultKeybindingsOnStartup;
+      });
+
+      const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
+      assert.isTrue(
+        persisted.some((entry) => entry.command === "review.change.next" && entry.key === "mod+g"),
+      );
+      assert.isFalse(
+        persisted.some(
+          (entry) => entry.command === "review.change.next" && entry.key === "alt+arrowdown",
+        ),
+      );
+    }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 
   it.effect("skips conflicting default keybindings on startup and logs a detailed warning", () => {

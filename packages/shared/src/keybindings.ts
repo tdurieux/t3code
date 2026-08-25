@@ -46,6 +46,8 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+o", command: "editor.openFavorite" },
   { key: "[", command: "review.change.previous", when: "reviewFocus" },
   { key: "]", command: "review.change.next", when: "reviewFocus" },
+  { key: "alt+arrowup", command: "review.change.previous", when: "reviewFocus" },
+  { key: "alt+arrowdown", command: "review.change.next", when: "reviewFocus" },
   { key: "mod+shift+[", command: "thread.previous" },
   { key: "mod+shift+]", command: "thread.next" },
   { key: "mod+shift+s", command: "thread.settle", when: "!terminalFocus" },

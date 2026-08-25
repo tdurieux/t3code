@@ -55,6 +55,10 @@ so add one in **Settings** → **Keybindings** if you want to use it.
 `thread.settle` settles the active thread or restores it when it is already settled. Its default
 shortcut is `mod+shift+s`, and it does not run while the terminal has focus.
 
+In pull request review mode, `review.change.next` moves to the next change chunk with
+`Alt+ArrowDown` or `]`. `review.change.previous` moves back with `Alt+ArrowUp` or `[`. Both commands
+use the `reviewFocus` condition and can be changed in **Settings** → **Keybindings**.
+
 The command palette searches active thread titles, projects, branches, user messages, and final
 agent responses across connected environments. Message matches show one labeled excerpt while
 keeping the thread's project, branch, and machine context visible. Message search begins after two
@@ -77,9 +81,9 @@ but the new thread does not reuse the worktree created for the thread that just 
 ## `when` Conditions
 
 A `when` expression is evaluated against context keys describing the current UI state. The keys
-the app supplies today are `terminalFocus`, `terminalOpen`, `previewFocus`, `previewOpen`, and
-`modelPickerOpen`. The set is open and grows over time, so treat that as the current list rather
-than a fixed one. Any key the running app does not supply evaluates to `false`.
+the app supplies today are `terminalFocus`, `terminalOpen`, `previewFocus`, `previewOpen`,
+`modelPickerOpen`, and `reviewFocus`. The set is open and grows over time, so treat that as the
+current list rather than a fixed one. Any key the running app does not supply evaluates to `false`.
 
 Operators: `!` (not), `&&` (and), `||` (or), and parentheses.
 

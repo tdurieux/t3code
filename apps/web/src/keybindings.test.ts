@@ -150,6 +150,16 @@ const DEFAULT_BINDINGS = compile([
     command: "review.change.next",
     whenAst: whenIdentifier("reviewFocus"),
   },
+  {
+    shortcut: { ...modShortcut("arrowup"), modKey: false, altKey: true },
+    command: "review.change.previous",
+    whenAst: whenIdentifier("reviewFocus"),
+  },
+  {
+    shortcut: { ...modShortcut("arrowdown"), modKey: false, altKey: true },
+    command: "review.change.next",
+    whenAst: whenIdentifier("reviewFocus"),
+  },
   { shortcut: modShortcut("[", { shiftKey: true }), command: "thread.previous" },
   { shortcut: modShortcut("]", { shiftKey: true }), command: "thread.next" },
   {
@@ -782,8 +792,23 @@ describe("resolveShortcutCommand", () => {
       }),
       "review.change.previous",
     );
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "ArrowDown", altKey: true }), DEFAULT_BINDINGS, {
+        context: { reviewFocus: true },
+      }),
+      "review.change.next",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "ArrowUp", altKey: true }), DEFAULT_BINDINGS, {
+        context: { reviewFocus: true },
+      }),
+      "review.change.previous",
+    );
     assert.isNull(
       resolveShortcutCommand(event({ key: "]", code: "BracketRight" }), DEFAULT_BINDINGS),
+    );
+    assert.isNull(
+      resolveShortcutCommand(event({ key: "ArrowDown", altKey: true }), DEFAULT_BINDINGS),
     );
   });
 

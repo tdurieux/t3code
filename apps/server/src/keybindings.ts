@@ -493,7 +493,6 @@ const make = Effect.gen(function* () {
         return;
       }
       const customConfig = runtimeConfig.keybindings;
-      const existingCommands = new Set(customConfig.map((entry) => entry.command));
       const missingDefaults: KeybindingRule[] = [];
       const shortcutConflictWarnings: Array<{
         defaultCommand: KeybindingRule["command"];
@@ -502,7 +501,17 @@ const make = Effect.gen(function* () {
         when: string | null;
       }> = [];
       for (const defaultRule of DEFAULT_KEYBINDINGS) {
-        if (existingCommands.has(defaultRule.command)) {
+        if (customConfig.some((entry) => isSameKeybindingRule(entry, defaultRule))) {
+          continue;
+        }
+        const commandEntries = customConfig.filter(
+          (entry) => entry.command === defaultRule.command,
+        );
+        const commandHasCustomRule = commandEntries.some(
+          (entry) =>
+            !DEFAULT_KEYBINDINGS.some((candidate) => isSameKeybindingRule(entry, candidate)),
+        );
+        if (commandHasCustomRule) {
           continue;
         }
         const conflictingEntry = customConfig.find((entry) =>
